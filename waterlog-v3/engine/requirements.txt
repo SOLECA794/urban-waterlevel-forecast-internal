@@ -1,0 +1,16 @@
+# waterlog-v3 预测引擎依赖
+#
+# 安装：pip install -r requirements.txt
+#
+# **为什么这里必须锁精确版本**（曾经用 `>=` 下限，结果部署时踩了坑）：
+# 训练产物 `.joblib` 是 pickle，反序列化要 import 训练当时的**私有模块**
+# （scikit-learn 的 `_loss` 这类）。服务器 pip 装到 1.9.1 后，加载 1.8.0 训出的模型
+# 直接报 `ModuleNotFoundError: No module named '_loss'`，引擎起不来。
+#
+# 本机训练环境：scikit-learn 1.8.0 / numpy 2.3.5 / joblib 1.5.3。
+# 要升级这三个包，必须**连模型一起重训**，不能只升依赖。
+fastapi>=0.110
+uvicorn>=0.27
+numpy==2.3.5
+scikit-learn==1.8.0
+joblib==1.5.3

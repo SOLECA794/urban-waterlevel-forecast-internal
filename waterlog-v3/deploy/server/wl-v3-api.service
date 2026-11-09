@@ -1,0 +1,26 @@
+[Unit]
+Description=waterlog-v3 Go API + SPA (:8200)
+After=network.target wl-v3-engine.service
+Wants=wl-v3-engine.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/waterlog-v3/api
+# 对外提供服务，必须绑 0.0.0.0（默认值 127.0.0.1 是本机开发用的）
+Environment=WL_API_HOST=0.0.0.0
+Environment=WL_API_PORT=8200
+Environment=WL_ENGINE_URL=http://127.0.0.1:8201
+Environment=WL_WEB_DIR=/opt/waterlog-v3/web/dist
+Environment=WL_API_DB=/opt/waterlog-v3/api/data/waterlog.db
+# 引导口令：首次启动建 admin 账号用；库里有用户后不会再覆盖
+Environment=WL_BOOTSTRAP_ADMIN_PASSWORD=admin123
+ExecStart=/opt/waterlog-v3/api/waterlog-api
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/opt/waterlog-v3/logs/api.log
+StandardError=append:/opt/waterlog-v3/logs/api.log
+MemoryMax=400M
+
+[Install]
+WantedBy=multi-user.target

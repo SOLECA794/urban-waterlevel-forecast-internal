@@ -1,0 +1,54 @@
+[
+ {
+  "file": "shots/01-overview.png",
+  "bytes": 530010
+ },
+ {
+  "file": "shots/02-sites.png",
+  "bytes": 295442
+ },
+ {
+  "file": "shots/03-detail-S08.png",
+  "bytes": 394417
+ },
+ {
+  "file": "shots/04-alerts.png",
+  "bytes": 152483
+ },
+ {
+  "file": "shots/05-shift.png",
+  "bytes": 203610
+ },
+ {
+  "file": "shots/06-model.png",
+  "bytes": 508999
+ },
+ {
+  "file": "shots/07-rules.png",
+  "bytes": 236859
+ },
+ {
+  "file": "shots/08-system.png",
+  "bytes": 346285
+ },
+ {
+  "file": "shots/09-admin.png",
+  "bytes": 185076
+ },
+ {
+  "file": "shots/10-login.png",
+  "bytes": 121729
+ },
+ {
+  "file": "shots/board-edit.png",
+  "bytes": 1247055
+ },
+ {
+  "file": "shots/board-light.png",
+  "bytes": 869267
+ },
+ {
+  "file": "shots/prod-board.png",
+  "bytes": 869267
+ }
+]

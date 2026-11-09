@@ -1,0 +1,22 @@
+[Unit]
+Description=waterlog-v3 forecast engine (FastAPI, :8201)
+After=network.target
+Before=wl-v3-api.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/waterlog-v3/engine
+Environment=PYTHONUNBUFFERED=1
+Environment=WL_ENGINE_PORT=8201
+Environment=WL_GO_API=http://127.0.0.1:8200
+ExecStart=/opt/waterlog-v3/engine/.venv/bin/python -m waterlog.api.app
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/opt/waterlog-v3/logs/engine.log
+StandardError=append:/opt/waterlog-v3/logs/engine.log
+# 内存只有 1.9G，且同机还有别的业务：给引擎一个上限，避免 OOM 时把整机拖垮
+MemoryMax=900M
+
+[Install]
+WantedBy=multi-user.target

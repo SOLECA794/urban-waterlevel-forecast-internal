@@ -9,7 +9,7 @@ dist/
 .idea/
 Git4GenThinking/
 .workbuddy/
-docs/
+/docs/
 .ossutil_checkpoint
 .zcodeignore
 CLUADE.md

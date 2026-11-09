@@ -1,0 +1,49 @@
+# ============================================================================
+# Go API 镜像（三阶段：前端构建 → Go 编译 → 运行时）
+#
+# 构建上下文是仓库根目录：
+#   docker build -f deploy/Dockerfile.api -t waterlog/api .
+#
+# 最终镜像里只有：静态二进制 + web/dist + ca-certificates，约 40MB。
+# ============================================================================
+
+# ---------------------------------------------------------------- 1. 前端
+FROM node:22-bookworm-slim AS web
+
+WORKDIR /src/web
+# 依赖层单独缓存：只改页面时不重装 node_modules
+COPY web/package.json web/package-lock.json* ./
+RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+COPY web/ ./
+# tsc 在 build 脚本里已经跑过（vite build 前有 tsc --noEmit），这里直接产 dist
+RUN npm run build
+
+# ---------------------------------------------------------------- 2. Go 编译
+FROM golang:1.25-bookworm AS build
+
+WORKDIR /src/api
+# 模块层单独缓存
+COPY api/go.mod api/go.sum* ./
+RUN go mod download
+COPY api/ ./
+# CGO_ENABLED=0：modernc.org/sqlite 是纯 Go 实现，可以静态链接，
+# 这样运行阶段不需要 glibc 也不需要 libsqlite3。
+RUN CGO_ENABLED=0 GOOS=linux go build \
+      -trimpath \
+      -ldflags "-s -w -X main.version=$(date -u +%Y%m%d-%H%M%S)" \
+      -o /out/waterlog-api ./cmd/waterlog-api
+
+# ---------------------------------------------------------------- 3. 运行时
+FROM gcr.io/distroless/static-debian12:nonroot
+
+WORKDIR /app
+
+COPY --from=build /out/waterlog-api /app/waterlog-api
+COPY --from=web /src/web/dist /app/web
+
+# distroless 的 nonroot 用户 uid=65532；数据卷要能写
+USER nonroot:nonroot
+
+EXPOSE 8200
+
+ENTRYPOINT ["/app/waterlog-api"]

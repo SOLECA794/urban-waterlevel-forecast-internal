@@ -1,0 +1,1466 @@
+openapi: 3.1.0
+
+info:
+  title: waterlog-v3 API
+  version: 1.0.0
+  summary: 城市内涝水位预测与预警平台
+  description: |
+    统一对外接口。前端（React SPA）与运维脚本都只跟这个服务打交道；
+    Python 预测引擎不对外暴露，由本服务反代其只读视图。
+
+    ## 三层结构
+
+    | 层 | 端口 | 职责 |
+    |---|---|---|
+    | 浏览器 / nginx | 443 | TLS、限流、SSE 缓冲治理 |
+    | Go API（本服务） | 8200 | 持久化、状态机、SSE、静态托管、鉴权、审计 |
+    | Python 引擎 | 8201 | 特征工程、训练、预测、修正、研判（内网） |
+
+    ## 三条约定
+
+    1. **时间是仿真时间**。所有 `ts` / `issued_at` / `raised_at` 字段都是 Unix 秒，
+       但基准是仿真时钟（60 倍速），不是墙钟。不要用它们和 `Date.now()` 相减。
+    2. **错误一律 `{"error": "中文原话"}`**。业务冲突（重复确认、非法状态迁移）
+       返回 409 且文案可以直接展示给值班员，前端不做二次翻译。
+    3. **物理量单位写死在字段名里**：`*_level` 是绝对水位（米，含站点基准高程），
+       `depth` 是积水深（米，水面减基准），`*_slope` 是变化率（米/小时），
+       `rain` 是雨强（毫米/小时），`rain_fc_*` 是累计雨量（毫米）。
+
+servers:
+  - url: http://127.0.0.1:8200
+    description: 本机开发
+  - url: https://waterlog.example.com
+    description: 生产（nginx 前置）
+
+tags:
+  - name: system
+    description: 健康检查、站点元数据、系统状态
+  - name: situation
+    description: 一张图与站点明细
+  - name: forecast
+    description: 预测发布与曲线
+  - name: alert
+    description: 预警四态与处置闭环
+  - name: model
+    description: 模型评估、版本治理、重训
+  - name: rules
+    description: 研判规则配置与影响预演
+  - name: auth
+    description: 登录、当前用户、用户管理
+  - name: audit
+    description: 操作审计
+  - name: notify
+    description: 通知渠道配置与投递记录
+  - name: sim
+    description: 演练控制（生产环境应关闭）
+  - name: ingest
+    description: 数据接入（引擎推、或外部数据源推）
+
+paths:
+  # ============================================================== system
+  /api/health:
+    get:
+      tags: [system]
+      summary: 健康检查
+      description: |
+        `engine_ok=false` 表示预测引擎不可达或还在首轮训练。此时遥测可能仍在更新
+        （取决于引擎是否还活着），但预测不会刷新。前端据此渲染「预测滞后」提示，
+        而不是把页面清空。
+      responses:
+        "200":
+          description: 服务自身存活（即使引擎挂了也返回 200，靠 engine_ok 区分）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, service, engine_ok, ts, clients]
+                properties:
+                  ok: { type: boolean, example: true }
+                  service: { type: string, example: waterlog-v3-api }
+                  engine_ok: { type: boolean, example: true }
+                  clients: { type: integer, description: 当前 SSE 连接数, example: 2 }
+                  ts: { type: integer, description: 仿真当前时刻, example: 1792537745 }
+                  engine_health:
+                    nullable: true
+                    type: object
+                    properties:
+                      cycles: { type: integer, description: 已完成预测轮次 }
+                      model_version: { type: string }
+                      pending: { type: integer, description: 已发布但未到结算时刻的预测条数 }
+                      uptime_s: { type: number }
+                      last_ts: { type: integer }
+
+  /api/sites:
+    get:
+      tags: [system]
+      summary: 站点元数据
+      description: 静态属性 + 四级阈值。不含实时数据，可长缓存（前端 staleTime 5 分钟）。
+      responses:
+        "200":
+          description: 全部站点
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sites:
+                    type: array
+                    items: { $ref: "#/components/schemas/Site" }
+
+  # ============================================================== situation
+  /api/overview:
+    get:
+      tags: [situation]
+      summary: 一张图数据
+      description: |
+        把站点静态属性、最新遥测、派生量、预警研判四类信息合并成一行，按
+        `warn_level` 降序、同等级按 `warn_score` 降序排列。
+
+        **`depth` 是后端算好的，前端不要再用 `level - base_level` 重算** ——
+        同一个物理量两处算，口径迟早分叉。
+      responses:
+        "200":
+          description: 全站态势
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issued_at: { type: integer, description: 本轮预测发布时间, nullable: true }
+                  model_version: { type: string, nullable: true }
+                  sites:
+                    type: array
+                    items: { $ref: "#/components/schemas/OverviewSite" }
+
+  /api/sites/{siteId}:
+    get:
+      tags: [situation]
+      summary: 站点详情
+      description: 详情页一次拿全：静态、最新实测、历史序列、完整预测、研判、决策。
+      parameters:
+        - $ref: "#/components/parameters/SiteId"
+      responses:
+        "200":
+          description: 站点完整视图
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  site: { $ref: "#/components/schemas/Site" }
+                  latest: { $ref: "#/components/schemas/TelemetryRow" }
+                  history:
+                    type: object
+                    properties:
+                      site_id: { type: string }
+                      step_min: { type: integer }
+                      points:
+                        type: array
+                        description: 每项 [ts, level, rain]
+                        items:
+                          type: array
+                          items: { type: number }
+                  forecast: { $ref: "#/components/schemas/SiteForecast" }
+                  issued_at: { type: integer, nullable: true }
+                  model_version: { type: string, nullable: true }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/sites/{siteId}/history:
+    get:
+      tags: [situation]
+      summary: 历史序列
+      parameters:
+        - $ref: "#/components/parameters/SiteId"
+        - name: hours
+          in: query
+          schema: { type: integer, default: 12, minimum: 1, maximum: 240 }
+      responses:
+        "200":
+          description: 序列
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  site_id: { type: string }
+                  step_min: { type: integer }
+                  points:
+                    type: array
+                    items:
+                      type: array
+                      items: { type: number }
+
+  # ============================================================== forecast
+  /api/forecast:
+    get:
+      tags: [forecast]
+      summary: 最新一轮预测
+      description: |
+        每 60 秒（仿真时间）一轮。`curve` 是 5 分钟分辨率的加密曲线，
+        每项 `[offset_min, level, lower, upper]`；`lower`/`upper` 是 90% 置信区间。
+
+        **`lower` 与 `upper` 已各自钳制在物理约束 `[base_level, base_level + 1.5]` 内**，
+        前端不需要再钳。区间宽度由分站点分预见期标定的 σ 决定。
+      responses:
+        "200":
+          description: 全站预测
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ForecastPayload" }
+        "404":
+          description: 引擎尚未产出首轮预测
+
+  # ============================================================== alert
+  /api/alerts:
+    get:
+      tags: [alert]
+      summary: 预警事件列表
+      parameters:
+        - name: active_only
+          in: query
+          description: 只看未解除的事件。`active` 是等价的旧拼写，两者都支持。
+          schema: { type: boolean, default: true }
+        - name: active
+          in: query
+          deprecated: true
+          schema: { type: string, enum: ["0", "1", "true", "false"] }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 200 }
+      responses:
+        "200":
+          description: 事件列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alerts:
+                    type: array
+                    items: { $ref: "#/components/schemas/AlertEvent" }
+
+  /api/alerts/{id}:
+    get:
+      tags: [alert]
+      summary: 预警详情（含处置备注）
+      parameters:
+        - $ref: "#/components/parameters/AlertId"
+      responses:
+        "200":
+          description: 事件与备注时间线
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event: { $ref: "#/components/schemas/AlertEvent" }
+                  notes:
+                    type: array
+                    items: { $ref: "#/components/schemas/AlertNote" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/alerts/{id}/ack:
+    post:
+      tags: [alert]
+      summary: 确认预警（阅读轴）
+      description: |
+        `ACTIVE_UNACK → ACTIVE_ACK`。重复确认返回 **409 + 「已确认，无需重复确认」**，
+        不静默成功 —— 静默成功会让前端以为状态变了。
+      parameters:
+        - $ref: "#/components/parameters/AlertId"
+      responses:
+        "200":
+          description: 已确认
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  state: { $ref: "#/components/schemas/WarnState" }
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/alerts/{id}/assign:
+    post:
+      tags: [alert]
+      summary: 派单
+      description: 写 `assignee`，同时落一条 `kind=dispatch` 的备注。
+      parameters:
+        - $ref: "#/components/parameters/AlertId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assignee]
+              properties:
+                assignee: { type: string, example: 排水公司 张工 }
+      responses:
+        "200":
+          description: 已派单
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  assignee: { type: string }
+
+  /api/alerts/{id}/disposition:
+    post:
+      tags: [alert]
+      summary: 推进处置状态（处置轴）
+      description: |
+        五态机：`open → dispatched → onsite → resolved / false_alarm`，
+        `resolved`/`false_alarm` 可回到 `open` 重开。
+
+        **`dispatched → open` 故意不允许** —— 已经派出去的人不能假装没派过，
+        要纠正就前进到 `false_alarm` 并写备注，留下痕迹。
+
+        非法迁移返回 409 + 原话（如「不能从「已处置」直接改为「误报归档」」），
+        同态重复返回 409 + 原话（如「已经是「已到场」，无需重复操作」）。
+      parameters:
+        - $ref: "#/components/parameters/AlertId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [disposition]
+              properties:
+                disposition: { $ref: "#/components/schemas/Disposition" }
+                note: { type: string }
+                author: { type: string }
+      responses:
+        "200":
+          description: 已推进
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  disposition: { $ref: "#/components/schemas/Disposition" }
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/alerts/{id}/notes:
+    post:
+      tags: [alert]
+      summary: 追加处置备注
+      parameters:
+        - $ref: "#/components/parameters/AlertId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string }
+                author: { type: string }
+                kind: { type: string, enum: [note, dispatch, status], default: note }
+      responses:
+        "200":
+          description: 已记录
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  id: { type: integer }
+
+  # ============================================================== model
+  /api/metrics:
+    get:
+      tags: [model]
+      summary: 模型指标与在线滚动评估
+      description: |
+        `latest` 是最近一次训练的完整产物（四模型族 × 四预见期 + 事件样本 + 特征重要性）；
+        `rolling` 是按预见期分组的**在线**滚动评估，用仿真时钟窗口。
+
+        **`skill` 的分母是持久化基线**（发布预测时的实测水位），不是实际值的标准差。
+        用后者会把跨站点高程差算进基线，skill 虚抬到 0.98。
+      parameters:
+        - name: window_h
+          in: query
+          schema: { type: integer, default: 6, minimum: 1, maximum: 48 }
+      responses:
+        "200":
+          description: 指标包
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MetricsResp" }
+
+  /api/decisions:
+    get:
+      tags: [model]
+      summary: 智能体值班决策日志
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 40, maximum: 500 }
+      responses:
+        "200":
+          description: 决策列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  decisions:
+                    type: array
+                    items: { $ref: "#/components/schemas/DecisionRow" }
+
+  /api/eval/pairs:
+    get:
+      tags: [model]
+      summary: 预测 vs 实际配对
+      description: 已结算的预测与其实际值。散点图画的是**积水深**（`yhat - base_level`），不是绝对水位。
+      parameters:
+        - name: hours
+          in: query
+          schema: { type: integer, default: 12 }
+      responses:
+        "200":
+          description: 配对列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pairs:
+                    type: array
+                    items: { $ref: "#/components/schemas/EvalPair" }
+
+  /api/models/versions:
+    get:
+      tags: [model]
+      summary: 模型版本列表
+      description: 扫描模型目录，`active` 标记当前 `latest.txt` 指向的版本。采纳即回滚/前滚。
+      responses:
+        "200":
+          description: 版本列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active: { type: string }
+                  versions:
+                    type: array
+                    items: { $ref: "#/components/schemas/ModelVersion" }
+
+  /api/models/adopt:
+    post:
+      tags: [model]
+      summary: 采纳某个模型版本
+      description: |
+        先把目标版本 `load_bundle()` 一遍验证可加载，再改写 `latest.txt` 指针，
+        然后立刻用新模型跑一轮预测并推送。**验证失败不切换** —— 坏模型上线比不准的模型危险。
+      parameters:
+        - name: version
+          in: query
+          required: true
+          schema: { type: string, example: v20261021-050212 }
+      responses:
+        "200":
+          description: 已采纳
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  active: { type: string }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/retrain:
+    post:
+      tags: [model]
+      summary: 触发重训
+      description: 异步提交，立即返回。训练约 90 秒，期间旧模型继续服务。用 `/retrain/status` 轮询。
+      responses:
+        "200":
+          description: 已提交
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  status: { type: string }
+        "409":
+          description: 已有训练在跑
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/retrain/status:
+    get:
+      tags: [model]
+      summary: 重训状态
+      responses:
+        "200":
+          description: 状态
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RetrainStatus" }
+
+  # ============================================================== rules
+  /api/rules:
+    get:
+      tags: [rules]
+      summary: 读取研判规则
+      responses:
+        "200":
+          description: 当前规则
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Rules" }
+    put:
+      tags: [rules]
+      summary: 保存研判规则（热更新）
+      description: |
+        合并进 `rules.json` 后立刻生效，下一轮研判即用新规则，不需要重训。
+        子字典（`weights`/`min_duration_min`/`score_cutoffs`）**逐键合并**，
+        不是整块替换 —— 整块替换会把没提到的等级静默抹掉。
+
+        **改之前应该先调 `/rules/preview` 看影响。**
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RulesPatch" }
+      responses:
+        "200":
+          description: 已生效
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Rules" }
+
+  /api/rules/preview:
+    post:
+      tags: [rules]
+      summary: 规则影响预演
+      description: |
+        用**同一条已发布的预测曲线**重判 before/after，不重新预测 ——
+        否则变化里混着模型噪声，分不清是规则改的还是这一轮雨变了。
+
+        尚无预测结果时返回 409，而不是空列表（空列表会被读成「改了没影响」）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RulesPatch" }
+      responses:
+        "200":
+          description: 逐站点影响
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RulesImpact" }
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  # ============================================================== auth
+  /api/auth/login:
+    post:
+      tags: [auth]
+      summary: 登录
+      description: 成功返回 HttpOnly + SameSite=Strict 的会话 Cookie，并落一条审计。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+      responses:
+        "200":
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { $ref: "#/components/schemas/User" }
+                  expires_at: { type: integer }
+        "401":
+          description: 口令错误（不区分「用户不存在」与「口令错」，避免枚举）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      summary: 退出登录
+      responses:
+        "200":
+          description: 已退出
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { ok: { type: boolean } }
+
+  /api/auth/me:
+    get:
+      tags: [auth]
+      summary: 当前会话用户
+      responses:
+        "200":
+          description: 当前用户与权限
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401":
+          description: 未登录
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/users:
+    get:
+      tags: [auth]
+      summary: 用户列表（需 admin）
+      responses:
+        "200":
+          description: 用户列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items: { $ref: "#/components/schemas/User" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [auth]
+      summary: 新建用户（需 admin）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password, role]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+                display_name: { type: string }
+                role: { $ref: "#/components/schemas/Role" }
+      responses:
+        "200":
+          description: 已创建
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+
+  /api/users/{username}:
+    patch:
+      tags: [auth]
+      summary: 改角色 / 停用（需 admin）
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role: { $ref: "#/components/schemas/Role" }
+                active: { type: boolean }
+                display_name: { type: string }
+                password: { type: string, format: password }
+      responses:
+        "200":
+          description: 已更新
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+
+  # ============================================================== audit
+  /api/audit:
+    get:
+      tags: [audit]
+      summary: 操作审计日志
+      description: |
+        所有写操作（POST/PUT/PATCH/DELETE）由中间件自动落库，包括失败的那些 ——
+        失败的写操作恰恰是最需要查的。只读接口不记。
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100, maximum: 1000 }
+        - name: actor
+          in: query
+          schema: { type: string }
+        - name: action
+          in: query
+          description: 按动作前缀过滤，如 `alert` 匹配 `/api/alerts/*` 的写操作
+          schema: { type: string }
+        - name: since
+          in: query
+          schema: { type: integer }
+      responses:
+        "200":
+          description: 审计记录（倒序）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items: { $ref: "#/components/schemas/AuditEntry" }
+
+  # ============================================================== notify
+  /api/notify/channels:
+    get:
+      tags: [notify]
+      summary: 通知渠道配置
+      description: 密钥类字段返回时打码，只保留末 4 位。
+      responses:
+        "200":
+          description: 渠道列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  channels:
+                    type: array
+                    items: { $ref: "#/components/schemas/NotifyChannel" }
+    put:
+      tags: [notify]
+      summary: 更新通知渠道（需 admin）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/NotifyChannel" }
+      responses:
+        "200":
+          description: 已保存
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { ok: { type: boolean } }
+
+  /api/notify/deliveries:
+    get:
+      tags: [notify]
+      summary: 最近投递记录
+      description: 每次预警触发/升级尝试投递都记一条，含失败原因。用于回答「为什么我没收到」。
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        "200":
+          description: 投递记录
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deliveries:
+                    type: array
+                    items: { $ref: "#/components/schemas/Delivery" }
+
+  /api/notify/test:
+    post:
+      tags: [notify]
+      summary: 发送测试消息（需 admin）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channel: { type: string, example: webhook }
+      responses:
+        "200":
+          description: 投递结果
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Delivery" }
+
+  # ============================================================== sim
+  /api/sim/storm:
+    post:
+      tags: [sim]
+      summary: 注入一场暴雨（演练）
+      description: |
+        往模拟器未来窗口里塞一场降雨过程。60 倍速下 150 分钟仿真雨在 2.5 分钟墙钟内下完，
+        注入后立刻轮询 `/overview` 会看到等级逐级上升。
+
+        **生产环境应整段删除这个路由。**
+      parameters:
+        - name: peak
+          in: query
+          description: 峰值雨强（毫米/小时）
+          schema: { type: number, default: 90, minimum: 3, maximum: 300 }
+        - name: dur
+          in: query
+          description: 持续步数（每步 5 分钟）
+          schema: { type: integer, default: 24, minimum: 6, maximum: 96 }
+      responses:
+        "200":
+          description: 注入结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  storm:
+                    type: object
+                    properties:
+                      start_step: { type: integer }
+                      dur_steps: { type: integer }
+                      peak_mm_h: { type: number }
+                      sim_minutes: { type: integer }
+
+  /api/sim/reset-water:
+    post:
+      tags: [sim]
+      summary: 排空积水（演练）
+      description: |
+        把水位清零、把特征缓冲重写成「这座城市从没下过雨」，并**作废所有未结算预测**。
+
+        为什么需要它：模拟器的退水极慢（管网满负荷、有漫溢拓宽，实测从 0.7 米退到
+        0.45 米要 11 小时仿真时间），演练等不到预警解除。作废未结算预测是因为那些预测
+        瞄准的是被抹掉的洪水曲线，留着结算会把在线 skill 抬成假数字。
+
+        **生产环境应整段删除这个路由。**
+      parameters:
+        - name: clear_sky
+          in: query
+          schema: { type: boolean, default: true }
+      responses:
+        "200":
+          description: 已清零
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  sites: { type: integer }
+                  clear_sky: { type: boolean }
+                  dropped_pending: { type: integer, description: 作废的未结算预测条数 }
+
+  # ============================================================== ingest
+  /api/ingest/telemetry:
+    post:
+      tags: [ingest]
+      summary: 写入遥测
+      description: |
+        引擎每 tick 推一次（10 站点 × 1 个时刻）。外部真实数据源接入时改成往这里推即可，
+        其余全部链路不用改。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TelemetryBatch" }
+      responses:
+        "200":
+          description: 已写入
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  rows: { type: integer }
+
+  /api/ingest/forecast:
+    post:
+      tags: [ingest]
+      summary: 发布一轮预测
+      description: |
+        存快照 → 落决策日志 → 逐站点推进四态机 → 广播 SSE。四态迁移与通知投递都在这一步发生。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ForecastPayload" }
+      responses:
+        "200":
+          description: 已发布
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  sites: { type: integer }
+                  warnings:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        site_id: { type: string }
+                        action: { type: string, enum: [raised, upgraded, updated, cleared, none] }
+
+  # ============================================================== stream
+  /api/events:
+    get:
+      tags: [system]
+      summary: SSE 事件流
+      description: |
+        事件名：`hello` / `telemetry` / `forecast` / `warning` / `rules` / `audit`。
+
+        前端只开**一条**连接（模块级单例），因为同源并发长连接上限是 6 条。
+        收到事件后按 `queryKey` 节流 800ms 再失效缓存，否则每 5 秒一次的遥测
+        会让整个页面重渲染。
+
+        nginx 前置时必须 `proxy_buffering off`，否则事件被攒着不发。
+      responses:
+        "200":
+          description: text/event-stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+components:
+  parameters:
+    SiteId:
+      name: siteId
+      in: path
+      required: true
+      schema: { type: string, example: S01 }
+    AlertId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+
+  responses:
+    NotFound:
+      description: 不存在
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: 业务冲突（文案可直接展示给值班员）
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: 权限不足
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string, example: 已确认，无需重复确认 }
+
+    Level:
+      type: string
+      enum: [none, blue, yellow, orange, red]
+      description: 预警等级。`none` 表示未达蓝色阈值。
+
+    WarnState:
+      type: string
+      enum: [ACTIVE_UNACK, ACTIVE_ACK, CLEARED_UNACK, CLEARED_ACK]
+      description: 阅读轴四态。由模型驱动，人只能 ack。
+
+    Disposition:
+      type: string
+      enum: [open, dispatched, onsite, resolved, false_alarm]
+      description: 处置轴五态。由人驱动。
+
+    Role:
+      type: string
+      enum: [admin, operator, viewer]
+      description: |
+        - `admin`：全部权限，含用户管理、规则、模型采纳、通知配置
+        - `operator`：可 ack、派单、推进处置、写备注、触发演练；不可改规则/用户/模型
+        - `viewer`：只读
+
+    Thresholds:
+      type: object
+      description: 四级积水深阈值（米，相对站点基准）。改它需要重训，因为它参与特征工程。
+      required: [blue, yellow, orange, red]
+      properties:
+        blue: { type: number, example: 0.06 }
+        yellow: { type: number, example: 0.18 }
+        orange: { type: number, example: 0.30 }
+        red: { type: number, example: 0.46 }
+
+    Site:
+      type: object
+      properties:
+        site_id: { type: string, example: S01 }
+        name: { type: string, example: 解放路下穿隧道 }
+        district: { type: string, example: 城关区 }
+        lon: { type: number }
+        lat: { type: number }
+        base_level: { type: number, description: 站点基准高程（米）, example: 7.85 }
+        thresholds: { $ref: "#/components/schemas/Thresholds" }
+        kind:
+          type: string
+          description: 站点类型，决定该站点最典型的致灾形态
+          enum: [underpass, interchange, lowland, riverside, industrial, alley, plaza, culvert, campus, channel]
+        catchment_ha: { type: number, description: 汇水面积（公顷） }
+        pond_ha: { type: number, description: 蓄水面积（公顷） }
+        impervious: { type: number, description: 不透水率 0~1 }
+        drainage_mm_h: { type: number, description: 管网排水能力（毫米/小时） }
+
+    TelemetryRow:
+      type: object
+      properties:
+        ts: { type: integer }
+        site_id: { type: string }
+        level: { type: number, description: 绝对水位（米） }
+        rain: { type: number, description: 实测雨强（毫米/小时） }
+        quality: { type: number, description: "0~1，<0.7 表示传感器可疑" }
+        rain_fc_1h: { type: number, description: 未来 1 小时累计雨量（毫米） }
+        rain_fc_3h: { type: number, description: 未来 3 小时累计雨量（毫米） }
+
+    TelemetryBatch:
+      type: object
+      required: [rows]
+      properties:
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/TelemetryRow" }
+
+    Factors:
+      type: object
+      description: |
+        三因子明细。`*_norm` 是归一化到 0~1.5 的因子得分，
+        `score` 是按权重加权后的综合分（0~1+）。
+      properties:
+        peak: { type: number, description: 峰值因子的原始值（米，积水深） }
+        duration: { type: number, description: 超阈持续（分钟） }
+        trend: { type: number, description: 1 小时变化率（米/小时） }
+        peak_norm: { type: number }
+        duration_norm: { type: number }
+        trend_norm: { type: number }
+        score: { type: number }
+
+    Horizon:
+      type: object
+      description: 单个预见期的点预测与区间
+      properties:
+        horizon_min: { type: integer, enum: [60, 180, 360, 720] }
+        level: { type: number, description: 预测绝对水位（已含修正与物理钳制） }
+        lower: { type: number, description: 90% 区间下界 }
+        upper: { type: number, description: 90% 区间上界 }
+        delta: { type: number, description: 相对当前水位的增量（含修正） }
+        delta_raw: { type: number, description: 模型原始增量（未修正） }
+        corrected: { type: number, description: 滚动修正量，已钳制在 ±3σ }
+        gain: { type: number, description: 修正增益 0~0.6 }
+        sigma: { type: number, description: 该站点该预见期的残差标准差 }
+        model: { type: string, description: 实际使用的模型族 }
+        reason: { type: string }
+
+    Warning:
+      type: object
+      properties:
+        level: { $ref: "#/components/schemas/Level" }
+        score: { type: number }
+        factors: { $ref: "#/components/schemas/Factors" }
+        peak_level: { $ref: "#/components/schemas/Level" }
+        peak_value: { type: number, description: 峰值积水深（米） }
+        peak_min: { type: integer, description: 峰值出现的分钟偏移 }
+        peak_at_min: { type: integer, nullable: true }
+        duration_min: { type: integer, description: 超阈持续分钟数 }
+        slope_mh: { type: number, description: 当前趋势（米/小时） }
+        reason: { type: string, description: 研判依据原话，直接展示给值班员 }
+        blocked_by: { type: string, nullable: true, description: 被哪道硬约束压制 }
+        thresholds: { type: array, items: { type: number } }
+        horizon_min: { type: integer, description: 研判窗口（分钟） }
+
+    Decision:
+      type: object
+      description: 智能体值班决策。它不是对话机器人，是每个站点每轮的一次「要不要加算」判断。
+      properties:
+        should_forecast: { type: boolean }
+        model: { type: string }
+        gain: { type: number }
+        reason: { type: string }
+        signals: { type: object, additionalProperties: true }
+
+    SiteForecast:
+      type: object
+      properties:
+        site_id: { type: string }
+        now_level: { type: number }
+        horizons:
+          type: array
+          items: { $ref: "#/components/schemas/Horizon" }
+        curve:
+          type: array
+          description: 5 分钟分辨率加密曲线，每项 [offset_min, level, lower, upper]
+          items:
+            type: array
+            items: { type: number }
+        warning: { $ref: "#/components/schemas/Warning" }
+        decision: { $ref: "#/components/schemas/Decision" }
+
+    ForecastPayload:
+      type: object
+      properties:
+        issued_at: { type: integer }
+        model_version: { type: string }
+        step_min: { type: integer }
+        sites:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/SiteForecast" }
+
+    OverviewSite:
+      type: object
+      description: 一张图一行。静态属性 + 实时遥测 + 派生量 + 研判合并。
+      properties:
+        site_id: { type: string }
+        name: { type: string }
+        district: { type: string }
+        lon: { type: number }
+        lat: { type: number }
+        base_level: { type: number }
+        thresholds: { type: array, items: { type: number } }
+        kind: { type: string }
+        level: { type: number, description: 实测绝对水位 }
+        depth: { type: number, description: 积水深（后端算好，前端不要重算） }
+        rain: { type: number }
+        quality: { type: number }
+        trend_1h: { type: number, description: 米/小时 }
+        warn_level: { $ref: "#/components/schemas/Level" }
+        warn_score: { type: number }
+        peak_level: { $ref: "#/components/schemas/Level" }
+        peak_value: { type: number }
+        peak_at_min: { type: integer, nullable: true }
+        duration_min: { type: integer }
+        slope_mh: { type: number }
+        horizon_min: { type: integer }
+        reason: { type: string }
+        factors: { $ref: "#/components/schemas/Factors" }
+        spark:
+          type: array
+          description: 近 3 小时抽稀后的水位序列，用于画迷你趋势
+          items: { type: number }
+        updated_at: { type: integer }
+
+    AlertEvent:
+      type: object
+      properties:
+        id: { type: integer }
+        site_id: { type: string }
+        site_name: { type: string }
+        level: { $ref: "#/components/schemas/Level" }
+        score: { type: number }
+        peak_value: { type: number }
+        peak_at_min: { type: integer, nullable: true }
+        duration_min: { type: integer }
+        slope_mh: { type: number }
+        reason: { type: string }
+        state: { $ref: "#/components/schemas/WarnState" }
+        disposition: { $ref: "#/components/schemas/Disposition" }
+        assignee: { type: string }
+        note_count: { type: integer }
+        raised_at: { type: integer }
+        acked_at: { type: integer, nullable: true }
+        cleared_at: { type: integer, nullable: true }
+        updated_at: { type: integer }
+
+    AlertNote:
+      type: object
+      properties:
+        id: { type: integer }
+        alert_id: { type: integer }
+        at: { type: integer }
+        author: { type: string }
+        kind: { type: string, enum: [note, dispatch, status] }
+        text: { type: string }
+
+    MetricRow:
+      type: object
+      properties:
+        model: { type: string, enum: [persistence, linear, gbr, blend] }
+        horizon_min: { type: integer }
+        rmse: { type: number }
+        mae: { type: number }
+        mape: { type: number }
+        nse: { type: number }
+        skill: { type: number, description: 相对持久化基线的技能分 }
+        crps: { type: number }
+        picp90: { type: number, description: "区间覆盖率，**比例**（0.924 表示 92.4%），理想 0.9" }
+        pinaw: { type: number, description: 区间平均宽度（米），越小越锐 }
+        event_n: { type: number, description: 事件样本数 }
+        event_rmse: { type: number }
+        event_skill: { type: number }
+
+    MetricsBundle:
+      type: object
+      properties:
+        version: { type: string }
+        trained_at: { type: integer }
+        n_train: { type: integer }
+        n_valid: { type: integer }
+        n_features: { type: integer }
+        train_seconds: { type: number }
+        folds: { type: integer }
+        metrics:
+          type: object
+          description: 模型族 → 指标行数组
+          additionalProperties:
+            type: array
+            items: { $ref: "#/components/schemas/MetricRow" }
+        weights:
+          type: object
+          description: 预见期 → 站点 → 融合权重（1.0 表示完全信任 GBR，<1 表示向持久化基线回退）
+          additionalProperties:
+            type: object
+            additionalProperties: { type: number }
+        feature_importance:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              importance: { type: number }
+
+    RollingStat:
+      type: object
+      description: 在线滚动评估。`skill` 的分母是持久化基线（发布时的实测水位），不是实际值标准差。
+      properties:
+        n: { type: integer }
+        rmse: { type: number }
+        mae: { type: number }
+        bias: { type: number }
+        p95_abs: { type: number }
+        baseline_rmse: { type: number }
+        skill: { type: number }
+
+    MetricsResp:
+      type: object
+      properties:
+        latest: { $ref: "#/components/schemas/MetricsBundle" }
+        history:
+          type: array
+          items:
+            type: object
+            properties:
+              version: { type: string }
+              trained_at: { type: integer }
+              rmse_3h: { type: number }
+              skill_3h: { type: number }
+        rolling:
+          type: object
+          description: 预见期（字符串键）→ 滚动统计
+          additionalProperties: { $ref: "#/components/schemas/RollingStat" }
+        rolling_window_h: { type: integer }
+
+    DecisionRow:
+      type: object
+      properties:
+        ts: { type: integer }
+        site_id: { type: string }
+        should_forecast: { type: boolean }
+        model: { type: string }
+        correction_gain: { type: number }
+        reason: { type: string }
+        signals: { type: object, additionalProperties: true }
+
+    EvalPair:
+      type: object
+      properties:
+        site_id: { type: string }
+        horizon_min: { type: integer }
+        issued_at: { type: integer }
+        target_at: { type: integer }
+        yhat: { type: number }
+        actual: { type: number, nullable: true }
+        origin_level: { type: number, description: 发布预测时的实测水位，用于算持久化基线误差 }
+        base_level: { type: number }
+
+    ModelVersion:
+      type: object
+      properties:
+        version: { type: string }
+        active: { type: boolean }
+        trained_at: { type: integer }
+        train_seconds: { type: number }
+        folds: { type: integer }
+        size_mb: { type: number }
+        rmse_3h: { type: number, nullable: true }
+        skill_3h: { type: number, nullable: true }
+
+    RetrainStatus:
+      type: object
+      properties:
+        status: { type: string, enum: [idle, running, done, error] }
+        started_at: { type: integer, nullable: true }
+        finished_at: { type: integer, nullable: true }
+        version: { type: string, nullable: true }
+        seconds: { type: number, nullable: true }
+        error: { type: string, nullable: true }
+
+    Rules:
+      type: object
+      description: |
+        研判规则文档。改它秒级生效，不需要重训。
+
+        **不可配置的三条红线**：两道硬约束只能降不能升；权重必须和为 1；
+        分档必须严格递增、最短持续必须非递减。
+      properties:
+        weights:
+          type: object
+          required: [peak, duration, trend]
+          description: 三因子权重，必须和为 1
+          properties:
+            peak: { type: number, example: 0.45 }
+            duration: { type: number, example: 0.35 }
+            trend: { type: number, example: 0.20 }
+        score_cutoffs:
+          type: object
+          description: 综合分分档，必须严格递增
+          properties:
+            blue: { type: number, example: 0.22 }
+            yellow: { type: number, example: 0.40 }
+            orange: { type: number, example: 0.60 }
+            red: { type: number, example: 0.78 }
+        min_duration_min:
+          type: object
+          description: 各级最短超阈持续时间。未达标则封顶降级（只降不升）。
+          properties:
+            blue: { type: integer, example: 20 }
+            yellow: { type: integer, example: 30 }
+            orange: { type: integer, example: 45 }
+            red: { type: integer, example: 60 }
+        duration_saturation_min:
+          type: integer
+          description: 持续时间因子的饱和点，超过它不再加分
+          example: 180
+        trend_upgrade_slope:
+          type: number
+          description: 上涨到该速率（米/小时）时升一级
+          example: 0.25
+        trend_downgrade_slope:
+          type: number
+          description: 退水到该速率时降一级
+          example: -0.15
+        trend_score_span:
+          type: number
+          example: 0.5
+        horizon_min:
+          type: integer
+          description: 研判窗口（分钟）。取 180 是因为 3 小时是最关心的预见期。
+          example: 180
+        min_level_for_alarm:
+          type: integer
+          minimum: 1
+          maximum: 4
+          description: |
+            **等级序，不是分值**：1=蓝 2=黄 3=橙 4=红。低于它的等级直接压成 `none`。
+
+            这个字段曾经被前端当成「最低综合分」渲染成 0~1 输入框，读起来像
+            「0.22 分才报警」。一个字段的语义如果两种读法都说得通，必须在 UI 上消歧。
+          example: 1
+
+    RulesPatch:
+      type: object
+      description: 部分更新。子字典逐键合并，不是整块替换。
+      additionalProperties: true
+
+    RulesImpact:
+      type: object
+      properties:
+        changes:
+          type: array
+          items:
+            type: object
+            properties:
+              site_id: { type: string }
+              name: { type: string }
+              before_level: { $ref: "#/components/schemas/Level" }
+              before_score: { type: number }
+              after_level: { $ref: "#/components/schemas/Level" }
+              after_score: { type: number }
+              before_reason: { type: string }
+              after_reason: { type: string }
+              direction: { type: string, enum: [up, down, same] }
+        summary:
+          type: object
+          properties:
+            upgraded: { type: integer }
+            downgraded: { type: integer }
+            unchanged: { type: integer }
+            total: { type: integer }
+
+    User:
+      type: object
+      properties:
+        username: { type: string }
+        display_name: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        active: { type: boolean }
+        created_at: { type: integer }
+        last_login_at: { type: integer, nullable: true }
+
+    AuditEntry:
+      type: object
+      properties:
+        id: { type: integer }
+        at: { type: integer }
+        actor: { type: string, description: 会话用户；未登录时为 "-" }
+        role: { type: string }
+        method: { type: string }
+        path: { type: string }
+        status: { type: integer }
+        duration_ms: { type: number }
+        ip: { type: string }
+        request_id: { type: string }
+        summary: { type: string, description: 人读的一句话，如「确认预警 #202」 }
+
+    NotifyChannel:
+      type: object
+      properties:
+        kind: { type: string, enum: [inapp, webhook, email, sms] }
+        enabled: { type: boolean }
+        url: { type: string, description: webhook 地址 }
+        secret: { type: string, description: 读取时打码，只保留末 4 位 }
+        min_level: { $ref: "#/components/schemas/Level" }
+        quiet_minutes: { type: integer, description: 同站点同等级的去抖窗口 }
+
+    Delivery:
+      type: object
+      properties:
+        id: { type: integer }
+        at: { type: integer }
+        channel: { type: string }
+        alert_id: { type: integer, nullable: true }
+        site_id: { type: string }
+        level: { $ref: "#/components/schemas/Level" }
+        ok: { type: boolean }
+        detail: { type: string, description: 失败原因原话 }

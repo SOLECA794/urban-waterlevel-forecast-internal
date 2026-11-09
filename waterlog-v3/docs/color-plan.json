@@ -1,0 +1,50 @@
+{
+  "base": {
+    "bg": "#F2F7FC",
+    "surface": "#FFFFFF",
+    "subtle": "#E9F1F9"
+  },
+  "ink": {
+    "ink1": "#0B2545",
+    "ink2": "#000000",
+    "ink3": "#010101"
+  },
+  "brand": {
+    "brand": "#0E7490",
+    "brand2": "#0B5A70",
+    "ai": "#5B21B6"
+  },
+  "level": {
+    "blue": "#0284C7",
+    "yellow": "#C08A00",
+    "orange": "#EA580C",
+    "red": "#DC2626",
+    "none": "#8497A6"
+  },
+  "levelInk": {
+    "blue": "#000102",
+    "yellow": "#010100",
+    "orange": "#010000",
+    "red": "#000000",
+    "none": "#010101"
+  },
+  "levelWeak": {
+    "blue": "#E7F3FB",
+    "yellow": "#FBF3E0",
+    "orange": "#FCEDE4",
+    "red": "#FCE9E9",
+    "none": "#EDF2F6"
+  },
+  "series": {
+    "forecast": "#6D28D9",
+    "observed": "#0B2545",
+    "rain": "#2E86C1",
+    "fixed": "#B45309"
+  },
+  "semantic": {
+    "ok": "#15803D",
+    "warn": "#B45309",
+    "error": "#B91C1C",
+    "info": "#0E7490"
+  }
+}

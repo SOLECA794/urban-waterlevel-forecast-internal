@@ -1,0 +1,48 @@
+# ---------------------------------------------------------------- 环境与密钥
+.env
+.env.local
+*.pem
+*.key
+
+# ---------------------------------------------------------------- 运行产物
+logs/
+*.log
+*.err.log
+
+# Go 二进制
+api/waterlog-api.exe
+api/waterlog-api
+api/*.exe~
+api/waterlog-api.exe~
+
+# ---------------------------------------------------------------- 数据与模型
+# 数据集、模型 joblib、评估库、仿真时钟都是可再生资产（bootstrap 重建），
+# 体积大且每次训练都变，不进版本库。
+engine/data/*.npz
+engine/data/*.sqlite
+engine/data/*.sqlite-*
+engine/data/models/*.joblib
+engine/data/models/latest.txt
+engine/data/corrector.json
+engine/data/sim_clock.json
+engine/data/metrics.json
+api/data/
+
+# ---------------------------------------------------------------- 前端
+web/node_modules/
+web/dist/
+web/.vite/
+*.tsbuildinfo
+
+# ---------------------------------------------------------------- 截图与临时
+shots/*.png
+!shots/.gitkeep
+_stage/
+_tmp/
+
+# ---------------------------------------------------------------- 编辑器与系统
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

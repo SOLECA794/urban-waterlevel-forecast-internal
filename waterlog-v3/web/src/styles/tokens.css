@@ -1,0 +1,189 @@
+/* waterlog-v3 设计令牌 —— 科技盘（浅色）
+
+   三条不能违反的规则：
+   1. 组件里不写魔法色值，全部走变量或 utils/tokens.ts 的 hex 副本（canvas 读不到 CSS 变量）。
+   2. 唯一允许高饱和的是预警四档。主色、智能体、数据系列都必须退一步，否则注意力没有焦点。
+   3. 主色（青）与蓝色预警（天蓝）必须保持色相分离 —— 曾经它们同值，
+      结果「主按钮」和「蓝色预警」看起来是同一件事：一个代表可操作，一个代表事实。
+
+   做「科技感」的三个手段（按优先级）：冷色骨架 → 青色高亮 → 精确的细线与阴影。
+   不靠压暗底色：整页不允许出现暗区。 */
+
+:root {
+  /* ============ 1. 中性层 ============ */
+  --bg-canvas: #F2F7FC;
+  --bg-surface: #ffffff;
+  --bg-subtle: #E9F1F9;
+  --bg-hover: #EAF2FA;
+  --bg-sunken: #DDE9F4;
+
+  --border-1: #DCE7F2;
+  --border-2: #EAF1F8;
+  --border-strong: #C3D4E4;
+
+  --text-1: #0B2545;
+  --text-2: #4D7191;
+  --text-3: #5C6F7F;
+  --text-inverse: #ffffff;
+
+  /* ============ 2. 主色 ============ */
+  --primary: #0E7490;
+  --primary-weak: #E4F1F5;
+  --primary-strong: #0B5A70;
+  --primary-ink: #0B5A70;
+
+  /* 智能体/模型专用紫：与主色青、预测线紫同族但不与预警四档相撞。
+     旧值是 #0e7490，与主色完全相同 —— 那时主色还是蓝，所以看不出问题。 */
+  --accent-ai: #5B21B6;
+  --accent-ai-weak: #F1EAFB;
+  --accent-ai-ink: #4C1D95;
+
+  /* ============ 3. 告警四级 surface 色 ============ */
+  --level-blue: #0284C7;
+  --level-yellow: #C08A00;
+  --level-orange: #ea580c;
+  --level-red: #dc2626;
+
+  /* ============ 4. 告警四级 ink 色（文字专用，AA 达标） ============ */
+  --level-blue-ink: #0273AE;
+  --level-yellow-ink: #8E6600;
+  --level-orange-ink: #BD470A;
+  --level-red-ink: #D22222;
+
+  --level-blue-weak: #E7F3FB;
+  --level-yellow-weak: #FBF3E0;
+  --level-orange-weak: #FCEDE4;
+  --level-red-weak: #FCE9E9;
+
+  /* ============ 5. 系统语义色 ============ */
+  --success: #15803D;
+  --success-ink: #15803d;
+  --warning: #C08A00;
+  --warning-ink: #8A6100;
+  --danger: #dc2626;
+  --danger-ink: #B91C1C;
+  --neutral: #5C7080;
+
+  /* ============ 6. 预测专用色（与告警色区分，避免误读） ============ */
+  --fc-line: #6D28D9;      /* 预测主线（紫=未发生） */
+  --fc-band: #67e8f9;      /* 90% 置信带 */
+  --obs-line: #0B2545;     /* 实测线（墨=事实） */
+  --corr-line: #B45309;    /* 修正后对照线（赭，与紫分开） */
+  --rain-bar: #7FBEE4;     /* 降雨柱（比主色青更亮，不抢主色 */
+
+  /* ============ 7. 字阶 ============ */
+  --font-sans: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-base: 14px;
+  --fs-md: 15px;
+  --fs-lg: 17px;
+  --fs-xl: 20px;
+  --fs-2xl: 28px;
+  --fs-3xl: 34px;
+
+  --lh-tight: 1.15;
+  --lh-snug: 1.35;
+  --lh-normal: 1.5;
+
+  --fw-normal: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  /* ============ 8. 间距（4px 基数） ============ */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+
+  /* ============ 9. 圆角三档 ============ */
+  --radius-control: 6px;
+  --radius-card: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+
+  /* ============ 10. 阴影 ============ */
+  /* 四级浮起（与大屏 PALETTE.elev 同一套逻辑：近处硬、远处散） */
+  --elev-1: 0 1px 2px rgba(15,23,42,0.06), 0 0 0 1px rgba(15,23,42,0.04);
+  --elev-2: 0 1px 3px rgba(15,23,42,0.07), 0 8px 18px -6px rgba(15,23,42,0.10), 0 0 0 1px rgba(15,23,42,0.05);
+  --elev-3: 0 2px 6px rgba(15,23,42,0.08), 0 18px 40px -12px rgba(15,23,42,0.18), 0 0 0 1px rgba(15,23,42,0.06);
+  --elev-4: 0 4px 12px rgba(15,23,42,0.10), 0 34px 66px -18px rgba(15,23,42,0.26), 0 0 0 1px rgba(15,23,42,0.07);
+  --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-2: 0 4px 16px rgba(15, 23, 42, 0.08);
+  --shadow-3: 0 12px 32px rgba(15, 23, 42, 0.12);
+
+  /* ============ 11. 动效 ============ */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 150ms;
+  --dur-base: 240ms;
+  --dur-slow: 420ms;
+
+  /* ============ 12. 布局 ============ */
+  --sidebar-w: 212px;
+  --z-sticky: 20;
+  --z-overlay: 100;
+
+  /* ============ 13. 层次增强（视觉改版新增） ============
+     原则：不引入新的"品牌色"，只补足现有系统缺失的层次手段。
+     所有渐变/光晕都由已有色值派生，改主色时这里不用跟着改。 */
+
+  /* 页面底色不再是纯灰：左上角一抹极淡的蓝，右下角一抹极淡的青，
+     让白卡片"浮"起来。透明度刻意压在 0.06 以下，要的是纸感而不是网页感。 */
+  --grad-canvas: radial-gradient(1200px 620px at 12% -8%, rgba(14, 116, 144, 0.075), transparent 62%),
+    radial-gradient(900px 520px at 96% 4%, rgba(2, 132, 199, 0.06), transparent 60%),
+    linear-gradient(180deg, #F7FBFF 0%, var(--bg-canvas) 42%, #EAF2FA 100%);
+
+  /* 卡片：顶部 1px 高光 + 极淡竖向渐变，替代纯白平涂 */
+  --grad-card: linear-gradient(180deg, #ffffff 0%, #fdfefe 100%);
+  --card-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
+  /* 主色渐变（按钮 / 进度条 / 强调块） */
+  --grad-primary: linear-gradient(135deg, #128DA8 0%, #0E7490 52%, #0B5A70 100%);
+  --grad-ai: linear-gradient(135deg, #7C3AED 0%, #5B21B6 100%);
+  --grad-ink: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+
+  /* 四级告警的表面渐变：从 weak 色过渡到极淡，用于 KPI 卡与地图气泡 */
+  --grad-red: linear-gradient(135deg, #fee2e2 0%, #fff5f5 78%);
+  --grad-orange: linear-gradient(135deg, #ffedd5 0%, #fff8f1 78%);
+  --grad-yellow: linear-gradient(135deg, #fef3c7 0%, #fffcf0 78%);
+  --grad-blue: linear-gradient(135deg, #dbeafe 0%, #f5f9ff 78%);
+  --grad-none: linear-gradient(135deg, #eef2f7 0%, #fafbfd 78%);
+
+  /* 告警光晕：只给红/橙用，多了就廉价 */
+  --glow-red: 0 0 0 1px rgba(220, 38, 38, 0.18), 0 10px 26px -10px rgba(220, 38, 38, 0.3);
+  --glow-orange: 0 0 0 1px rgba(234, 88, 12, 0.16), 0 10px 26px -10px rgba(234, 88, 12, 0.26);
+
+  /* 地图底：让抽象示意图看起来像一张图，而不是一堆点 */
+  --grad-map: radial-gradient(760px 460px at 30% 20%, #ffffff 0%, #f3f7fc 58%, #edf2f9 100%);
+  --map-river: #cfe3f5;
+  --map-park: #e2f0e4;
+  --map-grid: #e6edf5;
+  --map-road: #dbe5f1;
+
+  /* 深色侧栏层次 */
+  --grad-sidebar: linear-gradient(180deg, #1B3A56 0%, #16304A 46%, #122840 100%);
+  --sidebar-glow: radial-gradient(420px 220px at 18% 0%, rgba(18, 141, 168, 0.28), transparent 68%);
+
+  /* ============ 14. 深色侧栏 ============ */
+  --sidebar-bg: #16304A;
+  --sidebar-border: #24425F;
+  --sidebar-text: #C7DBEA;
+  --sidebar-text-active: #ffffff;
+  --sidebar-muted: #94A3B8;
+  --sidebar-accent: #22B8CE;
+  --sidebar-accent-weak: rgba(34, 184, 206, 0.22);
+  --sidebar-hover: rgba(199, 219, 234, 0.11);
+
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  line-height: var(--lh-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

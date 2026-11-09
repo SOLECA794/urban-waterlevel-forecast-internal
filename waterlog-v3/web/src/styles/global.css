@@ -1,0 +1,346 @@
+@import './tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  /* 底色是三层径向 + 一层线性渐变（见 tokens.css --grad-canvas），
+     比纯 #f5f7fa 多一点空气感；fixed 保证滚动时底纹不跟着跑。 */
+  background: var(--grad-canvas);
+  background-attachment: fixed;
+  color: var(--text-1);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #b6c2d2;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@layer components {
+  /* ---------- 卡片 ---------- */
+  .card {
+    @apply relative bg-surface border border-line;
+    border-radius: var(--radius-lg);
+    background-image: var(--grad-card);
+    box-shadow: var(--shadow-1);
+  }
+  /* 卡片顶部一条 1px 高光，是"纸叠在纸上"的关键；缺了它就是普通白方块 */
+  .card::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.95) 22%, rgba(255, 255, 255, 0.95) 78%, transparent);
+    pointer-events: none;
+  }
+  .card-pad {
+    @apply p-4;
+  }
+  .card-hover {
+    @apply transition-all duration-200;
+    transition-timing-function: var(--ease-out);
+  }
+  .card-hover:hover {
+    /* 悬停抬到第三级：主应用里卡片是「平的」，动一下才有层级 */
+    box-shadow: var(--elev-3);
+    transform: translateY(-1px);
+    border-color: var(--border-strong);
+  }
+  /* 无内衬的纯容器（表格卡用，避免 ::before 压住表头） */
+  .card-flat::before {
+    display: none;
+  }
+
+  .card-title {
+    @apply text-[13px] font-semibold text-ink-2 tracking-wide;
+  }
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase text-ink-3;
+    letter-spacing: 0.08em;
+  }
+
+  /* ---------- 数字 ---------- */
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+  .stat-value {
+    @apply num font-semibold text-ink;
+    font-size: 30px;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+  }
+  .stat-value-sm {
+    @apply num font-semibold text-ink;
+    font-size: 20px;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+  }
+
+  /* ---------- 按钮 ---------- */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-control
+           text-[13px] font-medium border border-line bg-surface text-ink-2
+           transition-all duration-150 hover:bg-subtle hover:text-ink
+           disabled:opacity-50 disabled:cursor-not-allowed;
+    box-shadow: 0 1px 1px rgba(15, 23, 42, 0.03);
+  }
+  .btn:active:not(:disabled) {
+    transform: translateY(0.5px);
+  }
+  .btn-primary {
+    @apply border-transparent text-white hover:text-white;
+    background-image: var(--grad-primary);
+    box-shadow: 0 1px 2px rgba(37, 99, 235, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  }
+  .btn-primary:hover {
+    filter: brightness(1.06);
+    box-shadow: 0 4px 14px -4px rgba(37, 99, 235, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  }
+  .btn-danger {
+    @apply border-transparent text-white hover:text-white;
+    background-image: linear-gradient(135deg, #ef4444 0%, #dc2626 60%, #b91c1c 100%);
+    box-shadow: 0 1px 2px rgba(220, 38, 38, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  }
+  .btn-ghost {
+    @apply border-transparent bg-transparent text-ink-3 hover:text-ink hover:bg-subtle;
+    box-shadow: none;
+  }
+  .btn-sm {
+    @apply h-7 px-2.5 text-[12px];
+  }
+
+  /* ---------- 分段控件（比两个按钮更像"筛选"） ---------- */
+  .seg {
+    @apply inline-flex items-center p-0.5 rounded-control border border-line;
+    background: var(--bg-sunken);
+  }
+  .seg-item {
+    @apply h-7 px-3 rounded-[4px] text-[12px] font-medium text-ink-3 transition-all duration-150;
+  }
+  .seg-item:hover {
+    color: var(--text-1);
+  }
+  .seg-item[data-active='true'] {
+    @apply text-ink;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.1);
+  }
+
+  /* ---------- 标签 ---------- */
+  .chip {
+    @apply inline-flex items-center gap-1 h-[22px] px-2 rounded-pill text-[12px] font-medium whitespace-nowrap;
+  }
+  .chip-dot {
+    @apply inline-block rounded-full;
+    width: 6px;
+    height: 6px;
+  }
+
+  /* ---------- 表单 ---------- */
+  .field {
+    @apply h-8 w-full px-2.5 rounded-control border border-line bg-surface text-[13px]
+           text-ink num outline-none transition-all duration-150
+           focus:border-primary focus:ring-2 focus:ring-primary-weak;
+  }
+
+  /* ---------- 表格 ---------- */
+  .th {
+    @apply text-left text-[11px] font-semibold text-ink-3 uppercase tracking-wider
+           px-3 py-2 border-b border-line whitespace-nowrap;
+    background: linear-gradient(180deg, #f8fafc 0%, #f4f7fa 100%);
+    letter-spacing: 0.06em;
+  }
+  .td {
+    @apply px-3 py-2 border-b border-line-2 text-[13px] text-ink-2 align-middle;
+  }
+  tbody tr:last-child .td {
+    @apply border-b-0;
+  }
+  .row-hover {
+    @apply transition-colors duration-150;
+  }
+  .row-hover:hover {
+    background: var(--bg-subtle);
+  }
+
+  .mono {
+    font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  }
+
+  /* ---------- 细滚动条容器 ---------- */
+  .scroll-y {
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+
+  /* ---------- 文本渐变（只用于标题里的一两个词，滥用即廉价） ---------- */
+  .grad-text {
+    background-image: var(--grad-primary);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+/* ================= 动效 ================= */
+
+/* 页面进场：整页轻微上浮 + 淡入。配合 .stagger > * 逐个子项延迟。 */
+@keyframes pageIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.page-enter {
+  animation: pageIn 380ms var(--ease-out) both;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.stagger > * {
+  animation: fadeUp 420ms var(--ease-out) both;
+}
+.stagger > *:nth-child(1) { animation-delay: 20ms; }
+.stagger > *:nth-child(2) { animation-delay: 60ms; }
+.stagger > *:nth-child(3) { animation-delay: 100ms; }
+.stagger > *:nth-child(4) { animation-delay: 140ms; }
+.stagger > *:nth-child(5) { animation-delay: 180ms; }
+.stagger > *:nth-child(6) { animation-delay: 220ms; }
+.stagger > *:nth-child(7) { animation-delay: 260ms; }
+.stagger > *:nth-child(8) { animation-delay: 300ms; }
+.stagger > *:nth-child(9) { animation-delay: 340ms; }
+.stagger > *:nth-child(10) { animation-delay: 380ms; }
+.stagger > *:nth-child(n + 11) { animation-delay: 420ms; }
+
+/* 告警脉冲：只给"激活且未确认"用。纯 CSS，不占 React 渲染。 */
+@keyframes pulseRing {
+  0% {
+    box-shadow: 0 0 0 0 currentColor;
+    opacity: 0.5;
+  }
+  70% {
+    box-shadow: 0 0 0 8px currentColor;
+    opacity: 0;
+  }
+  100% {
+    box-shadow: 0 0 0 0 currentColor;
+    opacity: 0;
+  }
+}
+.pulse-dot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  animation: pulseRing 2.2s var(--ease-out) infinite;
+}
+
+/* 地图气泡的呼吸光圈：红色站点才有，用来把视线先拉过去 */
+@keyframes haloPulse {
+  0% {
+    r: 0;
+    opacity: 0.45;
+  }
+  80% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.halo {
+  animation: haloPulse 2.6s var(--ease-out) infinite;
+}
+
+/* 骨架屏微光 */
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+.skeleton {
+  @apply relative overflow-hidden rounded-control;
+  background: #eef2f7;
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.7), transparent);
+  animation: shimmer 1.4s infinite;
+}
+
+/* 横向进度条的生长动画（阈值条、因子条、评分条共用） */
+@keyframes growX {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.grow-x {
+  transform-origin: left center;
+  animation: growX 700ms var(--ease-out) both;
+}
+
+/* 数字仪表盘的弧线绘制 */
+@keyframes drawArc {
+  from {
+    stroke-dashoffset: var(--arc-len);
+  }
+}
+.draw-arc {
+  animation: drawArc 900ms var(--ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter,
+  .stagger > *,
+  .grow-x,
+  .draw-arc,
+  .pulse-dot::after,
+  .halo {
+    animation: none !important;
+  }
+}

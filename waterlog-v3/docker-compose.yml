@@ -1,0 +1,88 @@
+# ============================================================================
+# waterlog-v3 容器编排
+#
+# 本地起全套：
+#   docker compose up -d --build
+#   浏览器打开 http://127.0.0.1:8200
+#
+# 首次启动会自动：建表 → 生成 60 天历史数据集 → 训练 4 个预见期模型 → 灌修正器
+# 状态 → 开始 60 倍速推进。整个过程约 2 分钟，期间 /api/health 的 engine_ok 为 false。
+#
+# 生产形态见 deploy/nginx.conf 的注释：nginx 在最前面做 TLS 与限流，
+# Go API 直接托管前端静态文件，Python 引擎不对外暴露。
+# ============================================================================
+
+name: waterlog-v3
+
+services:
+  # ---------------------------------------------------------------- 预测引擎
+  engine:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.engine
+    image: waterlog/engine:local
+    restart: unless-stopped
+    environment:
+      WL_ENGINE_PORT: 8201
+      # 容器内寻址用服务名，不能用 127.0.0.1
+      WL_GO_API: http://api:8200
+      WL_ENGINE_PUSH: ${WL_ENGINE_PUSH:-1}
+      WL_TICK_SEC: ${WL_TICK_SEC:-5}
+      WL_FORECAST_EVERY_SEC: ${WL_FORECAST_EVERY_SEC:-60}
+      WL_SIM_SEED: ${WL_SIM_SEED:-20261021}
+      WL_LOG_FORMAT: ${WL_LOG_FORMAT:-text}
+      PYTHONUNBUFFERED: 1
+    volumes:
+      # 数据集、模型、评估库、仿真时钟、修正器状态都落在这里。
+      # 想从头再来一遍：docker compose down -v
+      - engine-data:/app/data
+    healthcheck:
+      # 引擎启动要先训练，给足 5 分钟；训练完成后 /health 才会 200
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8201/health',timeout=3).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 240s
+    networks: [waterlog]
+
+  # ---------------------------------------------------------------- API 网关
+  api:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    image: waterlog/api:local
+    restart: unless-stopped
+    depends_on:
+      engine:
+        condition: service_healthy
+    environment:
+      WL_API_PORT: 8200
+      WL_API_DB: /app/data/waterlog.db
+      WL_ENGINE_URL: http://engine:8201
+      # 前端静态文件已打进镜像，由 Go 直接托管（单二进制部署形态）
+      WL_WEB_DIR: /app/web
+      WL_LOG_FORMAT: ${WL_LOG_FORMAT:-text}
+      WL_SESSION_SECRET: ${WL_SESSION_SECRET:-dev-only-change-me}
+      WL_SESSION_TTL_H: ${WL_SESSION_TTL_H:-12}
+      WL_BOOTSTRAP_ADMIN_PASSWORD: ${WL_BOOTSTRAP_ADMIN_PASSWORD:-waterlog}
+      WL_NOTIFY_CHANNELS: ${WL_NOTIFY_CHANNELS:-inapp}
+      WL_NOTIFY_WEBHOOK_URL: ${WL_NOTIFY_WEBHOOK_URL:-}
+    ports:
+      - "${WL_API_PORT:-8200}:8200"
+    volumes:
+      - api-data:/app/data
+    healthcheck:
+      test: ["CMD", "/app/waterlog-api", "-healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks: [waterlog]
+
+volumes:
+  engine-data:
+  api-data:
+
+networks:
+  waterlog:
+    driver: bridge

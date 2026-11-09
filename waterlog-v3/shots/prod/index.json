@@ -1,0 +1,58 @@
+{
+  "base": "http://114.55.31.135:8200",
+  "width": 1600,
+  "height": 1500,
+  "captured_at": "2026-11-05T05:19:45.813Z",
+  "pages": [
+    {
+      "name": "01-overview",
+      "route": "/",
+      "bytes": 620851.2
+    },
+    {
+      "name": "02-sites",
+      "route": "/sites",
+      "bytes": 292249.6
+    },
+    {
+      "name": "03-detail-S08",
+      "route": "/sites/S08",
+      "bytes": 395366.4
+    },
+    {
+      "name": "04-alerts",
+      "route": "/alerts",
+      "bytes": 235622.4
+    },
+    {
+      "name": "05-shift",
+      "route": "/shift",
+      "bytes": 387174.4
+    },
+    {
+      "name": "06-model",
+      "route": "/model",
+      "bytes": 496640
+    },
+    {
+      "name": "07-rules",
+      "route": "/rules",
+      "bytes": 239411.2
+    },
+    {
+      "name": "08-system",
+      "route": "/system",
+      "bytes": 349798.4
+    },
+    {
+      "name": "09-admin",
+      "route": "/admin",
+      "bytes": 182886.4
+    },
+    {
+      "name": "10-login",
+      "route": "/login",
+      "bytes": 125542.4
+    }
+  ]
+}

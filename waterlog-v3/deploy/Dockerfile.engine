@@ -1,0 +1,37 @@
+# ============================================================================
+# Python 预测引擎镜像
+#
+# 构建上下文是仓库根目录（需要同时拿到 engine/ 与 deploy/）：
+#   docker build -f deploy/Dockerfile.engine -t waterlog/engine .
+# ============================================================================
+FROM python:3.12-slim AS base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# numpy/pandas/scikit-learn 的 manylinux wheel 已经自带 BLAS，
+# 但 scipy 的稀疏矩阵路径在 slim 上仍需要 libgomp。
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libgomp1 tini \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 依赖层单独缓存：只改业务代码时不会重装 200MB 的 scikit-learn
+COPY engine/requirements.txt ./requirements.txt
+RUN pip install -r requirements.txt
+
+COPY engine/ ./
+
+# 数据目录在 compose 里是命名卷；这里先建好并给非 root 用户
+RUN useradd --create-home --uid 10001 waterlog \
+ && mkdir -p /app/data && chown -R waterlog:waterlog /app
+USER waterlog
+
+EXPOSE 8201
+
+# tini 做 PID 1，保证 Ctrl-C / docker stop 能把信号送到 uvicorn
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["python", "-m", "waterlog.api.app"]
