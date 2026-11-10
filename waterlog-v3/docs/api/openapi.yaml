@@ -57,6 +57,13 @@ tags:
     description: 数据接入（引擎推、或外部数据源推）
   - name: icm
     description: ICM 集成适配网关（外部真实数据源接入）
+  - name: aiwater
+    description: |
+      AI 平台自研网关（/api/aiwater/v1/*）。
+
+      与本文件其余部分**不是同一套契约**：网关用 {code,msg,data} 响应包、
+      字符串错误码、camelCase 字段；其余部分用裸 JSON + {"error":...} + snake_case。
+      两套都是已上线的对外契约，互不迁就。
 
 paths:
   # ============================================================== system
@@ -967,6 +974,381 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  # ============================================================== aiwater
+  # AI 平台自研网关：/api/aiwater/v1/*
+  #
+  # 这一组与本文件其余部分**不是同一套契约**，别混用：
+  #   本文件其余部分：成功=裸 JSON，失败={"error":"中文原话"}，字段 snake_case
+  #   本组：          成功/失败都={"code":"0"|"<错误码>","msg":"...","data":{...}|null}
+  #                   code 是**字符串**，字段 camelCase，分页壳 {total,pageNo,pageSize,list}
+  #
+  # 两套都是已上线的对外契约：v3 原生那套被 9 个前端页面依赖，
+  # 网关那套是对方平台（ICM / AI 水位预测及预警平台）的对接要求。
+  # 所以网关自己写了一套响应出口，不去改 writeJSON / fail。
+  /api/aiwater/v1/prediction/result:
+    post:
+      tags: [aiwater]
+      summary: "A-1 水位趋势预测结果查询"
+      description: |
+        返回最近一轮预测快照中，各点位在各预见期上的预测结果。
+
+        **时间口径**：v3 跑的是 60 倍加速仿真时钟，响应里的 `data.timeBasis`
+        恒为 `simulated`，`data.issuedAt` 是仿真时钟秒、`data.wallClock` 是真实墙钟秒。
+        对方按真实时间对齐时用 `wallClock`；把 `issuedAt` 当真实采集时间会让整条时序链路失真。
+
+        `beginTime` / `endTime` 按**预测目标时刻**（`predictTime`）过滤。
+        本接口返回的是最近一轮快照，不是历史归档查询——历史走 v3 原生的
+        `/api/eval/pairs` 与 `/api/sites/{id}/history`。
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pointCode: { type: string, description: 单点位编码 }
+                pointCodes:
+                  type: array
+                  items: { type: string }
+                  description: 多点位编码；与 pointCode 二选一，均为空时返回全部站点
+                period:
+                  type: array
+                  items: { type: string, enum: ["1h", "3h", "6h", "12h"] }
+                  description: 预见期；为空时返回全部四个
+                beginTime: { type: integer, description: 预测目标时刻下界（仿真时钟秒） }
+                endTime: { type: integer, description: 预测目标时刻上界（仿真时钟秒） }
+                pageNo: { type: integer, description: 页码，从 1 起 }
+                pageSize: { type: integer, description: 每页条数，默认 20，上限 1000 }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AIWaterPredictionResponse" }
+        "400":
+          $ref: "#/components/responses/AIWaterBadRequest"
+        "401":
+          $ref: "#/components/responses/AIWaterUnauthorized"
+        "503":
+          $ref: "#/components/responses/AIWaterUnavailable"
+
+  /api/aiwater/v1/risk/realtime:
+    post:
+      tags: [aiwater]
+      summary: "A-2 风险等级实时查询"
+      description: |
+        返回**当前存在预警**的点位的实时风险。
+
+        无风险时返回**空列表**而不是报错——对方按约定用空列表表达「没有风险」，
+        报 400 会被他们的 SDK 当成调用失败并重试。
+
+        等级对外是三级（low / medium / high），我方原始四级（blue / yellow / orange / red）
+        在扩展字段 `warnLevel` 里保留，信息不因映射而丢失。
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pointCode: { type: string, description: 点位编码 }
+                regionIndexCode: { type: string, description: 区域编码（按 district 匹配） }
+                level:
+                  type: string
+                  enum: [low, medium, high]
+                  description: 风险等级过滤；同时接受我方四级 blue/yellow/orange/red
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AIWaterRiskResponse" }
+        "400":
+          $ref: "#/components/responses/AIWaterBadRequest"
+        "401":
+          $ref: "#/components/responses/AIWaterUnauthorized"
+
+  /api/aiwater/v1/warning/records:
+    post:
+      tags: [aiwater]
+      summary: "A-3 预警记录分页查询"
+      description: |
+        返回 v3 预警事件表的分页结果，按触发时刻倒序。
+
+        `level` 过滤同时接受对外三级（low/medium/high）与我方四级
+        （blue/yellow/orange/red）——只认一种的话，对方按自己字典传参会查空。
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                regionIndexCode: { type: string, description: 区域编码（按 district 匹配） }
+                pointCode: { type: string, description: 点位编码 }
+                level: { type: string, description: 等级过滤（三级或四级均可） }
+                beginTime: { type: integer, description: 触发时刻下界（仿真时钟秒） }
+                endTime: { type: integer, description: 触发时刻上界（仿真时钟秒） }
+                status:
+                  type: string
+                  enum: [active, acknowledged, cleared]
+                  description: 预警状态
+                pageNo: { type: integer }
+                pageSize: { type: integer }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AIWaterAlertPage" }
+        "400":
+          $ref: "#/components/responses/AIWaterBadRequest"
+        "401":
+          $ref: "#/components/responses/AIWaterUnauthorized"
+
+  /api/aiwater/v1/config/rainrule:
+    post:
+      tags: [aiwater]
+      summary: "A-4 雨情场景与阈值规则配置查询（只读）"
+      description: |
+        按「点位 × 等级」展开阈值规则。
+
+        `rainScene` 恒为 `unspecified`：v3 没有雨情场景模型（功能条款 8-1 是留白），
+        这里不编枚举值——宁可让对方知道「没有」，也不要给一个看起来像真的值。
+
+        引擎不可达时返回 503（对方会退避重试），不给降级的半份数据。
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pointCode: { type: string }
+                deviceType: { type: string, description: 设备类型，目前只有 water_level }
+                monitorItemCode: { type: string, description: 监测项，目前只有 water_level }
+                rainScene: { type: string, description: 雨情场景；v3 无此模型，匹配不到 }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AIWaterRainRuleResponse" }
+        "401":
+          $ref: "#/components/responses/AIWaterUnauthorized"
+        "503":
+          $ref: "#/components/responses/AIWaterUnavailable"
+
+  /api/aiwater/v1/model/versions:
+    post:
+      tags: [aiwater]
+      summary: "A-5 模型版本列表与切换"
+      description: |
+        `action=list`（默认）：只读，返回可采纳的模型版本清单。
+
+        `action=switch`：**写操作**。必须带 `versionId` 与 `confirm=true`。
+        没有 `confirm` 一律 400 —— 切换模型会让所有站点的预测曲线与告警等级当场改变，
+        而对方 SDK 的重试逻辑会重复发同一个请求；没有二次确认，
+        等于让一次网络抖动变成一次静默的线上变更。
+        切换动作会落进既有审计表。
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                action: { type: string, enum: [list, switch], default: list }
+                taskType: { type: string, description: 任务类型，目前只有 water_level_forecast }
+                versionId: { type: string, description: action=switch 时必填 }
+                requestId: { type: string, description: 切换请求的幂等键 }
+                confirm: { type: boolean, description: action=switch 时必须为 true }
+      responses:
+        "200":
+          description: 查询或切换成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AIWaterModelResponse" }
+        "400":
+          $ref: "#/components/responses/AIWaterBadRequest"
+        "401":
+          $ref: "#/components/responses/AIWaterUnauthorized"
+        "503":
+          $ref: "#/components/responses/AIWaterUnavailable"
+
+  /api/aiwater/v1/prediction/task/submit:
+    post:
+      tags: [aiwater]
+      summary: "A-6 预测任务提交（异步）"
+      description: |
+        提交一个预测任务，立刻返回 `taskId` 与 `status=queued`；结果经
+        `/prediction/task/status` 轮询或经 `callbackUrl` 回调获取。
+
+        **`requestId` 必填**：它是幂等键。重复提交同一个 `requestId` 返回**同一个**
+        `taskId`，并把 `duplicate` 置为 true。幂等由数据库唯一索引保证，
+        不是应用层的「先查再插」——后者在并发下必然有窗口。
+
+        没有 `requestId` 一律 400：否则对方 SDK 重试一次就会开出第二个任务，
+        两边看到的任务数对不上。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [requestId]
+              properties:
+                requestId: { type: string, description: 幂等键，必填 }
+                pointCodes:
+                  type: array
+                  items: { type: string }
+                  description: 参与预测的点位；为空表示全部站点
+                periods:
+                  type: array
+                  items: { type: string, enum: ["1h", "3h", "6h", "12h"] }
+                beginTime: { type: integer }
+                endTime: { type: integer }
+                modelVersion: { type: string, description: 指定模型版本；空表示用当前生效版本 }
+                callbackUrl: { type: string, description: 完成后回调地址 }
+      responses:
+        "200":
+          description: 提交成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AIWaterTaskSubmitResponse" }
+        "400":
+          $ref: "#/components/responses/AIWaterBadRequest"
+        "401":
+          $ref: "#/components/responses/AIWaterUnauthorized"
+        "503":
+          $ref: "#/components/responses/AIWaterUnavailable"
+
+  /api/aiwater/v1/prediction/task/status:
+    post:
+      tags: [aiwater]
+      summary: "A-7 预测任务状态与结果回调查询"
+      description: |
+        轮询任务状态。`status` 四态：`queued` / `running` / `success` / `failed`。
+
+        失败时 `errorCode` 取值：`INPUT_MISSING`（输入数据缺失）、
+        `MODEL_UNAVAILABLE`（模型不可用）、`TIMEOUT`、`QUOTA_EXCEEDED`、`INTERNAL`。
+
+        `resultUrl` 恒为空串：当前实现不落结果文件，结果直接在 `resultList` 里。
+        给一个打不开的 URL 会让对方误判成「还在生成」。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taskId]
+              properties:
+                taskId: { type: string, description: "也可用 query 参数 ?taskId= 传" }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AIWaterTaskStatusResponse" }
+        "400":
+          $ref: "#/components/responses/AIWaterBadRequest"
+        "401":
+          $ref: "#/components/responses/AIWaterUnauthorized"
+        "404":
+          $ref: "#/components/responses/AIWaterNotFound"
+
+  /api/aiwater/v1/waterlogging/event/lifecycle:
+    post:
+      tags: [aiwater]
+      summary: "A-8 积水事件全生命周期记录查询"
+      description: |
+        把两处来源按操作时刻归并：
+
+        1. `aiwater_event` 表——A-9 收到的对方事件（发现 / 复核 / 核销 三阶段）；
+        2. `warning_event` 表——我方预警四态机派生：升起=发现、确认=复核、解除=核销。
+
+        只给其中一份都会漏掉一半：只给 A-9 的是对方自己的数据（对我方没增量），
+        只给预警派生的是我方数据（对方看不到他们推过来的事件）。
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                eventId: { type: string }
+                pointCode: { type: string }
+                beginTime: { type: integer }
+                endTime: { type: integer }
+                stage: { type: string, enum: [发现, 复核, 核销] }
+                pageNo: { type: integer }
+                pageSize: { type: integer }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AIWaterLifecyclePage" }
+        "400":
+          $ref: "#/components/responses/AIWaterBadRequest"
+        "401":
+          $ref: "#/components/responses/AIWaterUnauthorized"
+
+  /api/aiwater/v1/event/receive:
+    post:
+      tags: [aiwater]
+      summary: "A-9 平台事件接收（订阅回调）"
+      description: |
+        对方平台推给我方的入站回调。**免平台 Token**（对方不会带它自己的 accessToken），
+        靠共享密钥验签。
+
+        **验签**：请求头 `X-AIWater-Signature` 携带
+        `HMAC-SHA256(WL_AIWATER_EVENT_SECRET, 原始报文体)` 的十六进制值
+        （可带 `sha256=` 前缀）。未配置密钥时放行，但响应里 `signatureVerified=false`。
+
+        **幂等**：主键是 `(eventId, stage)`。同一事件的同一阶段重复推送只留一条；
+        同一事件的不同阶段都要留——那正是「全生命周期」的含义。
+
+        **必须返回 HTTP 200**：对方平台按状态码判定投递是否成功，
+        非 200 会触发它的重试。同一个事件被反复推几十次，幂等表虽然能挡住重复入库，
+        但对方的重试队列会把本接口打满。所以验签失败、报文非法也一律回 200，
+        失败信息放在响应包的 `msg` 里（那是给对方业务侧看的）。
+      security: []
+      parameters:
+        - name: X-AIWater-Signature
+          in: header
+          required: false
+          schema: { type: string }
+          description: "HMAC-SHA256 十六进制摘要；未配置密钥时可不带"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                eventId: { type: string, description: 事件标识；缺失则该条被丢弃 }
+                pointCode: { type: string }
+                stage: { type: string, enum: [发现, 复核, 核销] }
+                operator: { type: string }
+                operateTime:
+                  oneOf:
+                    - { type: string, description: "ISO 8601，如 2026-11-10T10:00:00.000+08:00" }
+                    - { type: integer, description: Unix 秒（或毫秒） }
+                conclusion: { type: string }
+                evidenceUrls:
+                  type: array
+                  items: { type: string }
+            description: 单个事件对象、事件数组、或 {list:[...]} / {events:[...]} / {data:[...]} 包装都收
+      responses:
+        "200":
+          description: |
+            恒为 200。`data.accepted` 是本次真正写入的条数，
+            `data.duplicate` 是幂等命中的条数。
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AIWaterEventResultResponse" }
+
   # ============================================================== stream
   /api/events:
     get:
@@ -1017,8 +1399,336 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    AIWaterBadRequest:
+      description: 参数错误（网关响应包，code="400"）
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AIWaterEnvelope" }
+    AIWaterUnauthorized:
+      description: 网关令牌无效（网关响应包，code="401"）
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AIWaterEnvelope" }
+    AIWaterNotFound:
+      description: 资源不存在（网关响应包，code="404"）
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AIWaterEnvelope" }
+    AIWaterUnavailable:
+      description: |
+        服务不可用（引擎不可达 / 算力满 / 预测尚未生成），网关响应包 code="503"。
+        对方 SDK 会按 503 退避重试；前端应显示「预测滞后」而非空白。
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AIWaterEnvelope" }
 
   schemas:
+    AIWaterEnvelope:
+      type: object
+      description: |
+        网关统一响应包。成功与失败都用这个壳，区别在 `code`：
+        成功是字符串 `"0"`，失败是字符串错误码（`"400"` / `"401"` / `"404"` / `"500"` / `"503"`）。
+
+        `data` 在失败时写 `null` 而不是省略字段——对方按固定结构解析，
+        字段缺失与字段为 null 是两回事。
+      required: [code, msg, data]
+      properties:
+        code:
+          type: string
+          description: "成功为 \"0\"；失败为字符串错误码"
+          examples: ["0", "400", "401", "404", "500", "503"]
+        msg: { type: string, description: 可直接展示的中文文案 }
+        data: { description: 业务数据；失败时为 null }
+
+    AIWaterTimeMeta:
+      type: object
+      description: |
+        时间标注。v3 内部跑 60 倍加速仿真时钟，对方平台用真实时间，
+        不标注的话对方会把仿真时间当真实采集时间去算时序与时效，整条链路就废了。
+      properties:
+        timeBasis:
+          type: string
+          enum: [simulated, real]
+          description: 时间基准；当前恒为 simulated
+        issuedAt: { type: integer, description: 仿真时钟秒（60 倍速） }
+        wallClock: { type: integer, description: 真实墙钟秒（Unix），对方按真实时间对齐用这个 }
+
+    AIWaterPage:
+      type: object
+      description: 网关统一分页壳
+      required: [total, pageNo, pageSize, list]
+      properties:
+        total: { type: integer, description: 满足条件的总条数 }
+        pageNo: { type: integer, description: 页码，从 1 起 }
+        pageSize: { type: integer, description: 每页条数，默认 20，上限 1000 }
+        list: { type: array, items: {} }
+
+    AIWaterPrediction:
+      type: object
+      required: [pointCode, period, predictTime, predictLevel, riskLevel, confidence, modelVersion, revision, correctionId]
+      properties:
+        pointCode: { type: string, description: 点位编码 }
+        period: { type: string, enum: ["1h", "3h", "6h", "12h"] }
+        predictTime: { type: integer, description: 预测目标时刻（仿真时钟秒） }
+        predictLevel: { type: number, description: 预测水位（米，绝对高程） }
+        riskLevel: { type: string, enum: [low, medium, high] }
+        confidence:
+          type: number
+          description: 由置信带相对宽度换算的 0~1 置信度（1 / (1 + 1.6449·σ/|水位|)）
+        modelVersion: { type: string }
+        revision:
+          type: number
+          description: 修正**前**的预测水位；与 predictLevel 同时保留是为了可复盘「改了多少」
+        correctionId:
+          type: string
+          description: "修正记录标识 {pointCode}:{period}:{modelVersion}:{issuedAt}，幂等键"
+      additionalProperties: true
+      description: |
+        扩展字段（我方原始口径，保留以免信息在映射中丢失）：
+        `warnLevel`（blue/yellow/orange/red/none）、`lower` / `upper`（置信带）、
+        `sigma`、`correction`（本次修正量）、`gain`、`reason`。
+
+    AIWaterPredictionResponse:
+      allOf:
+        - $ref: "#/components/schemas/AIWaterEnvelope"
+        - type: object
+          properties:
+            data:
+              allOf:
+                - $ref: "#/components/schemas/AIWaterPage"
+                - $ref: "#/components/schemas/AIWaterTimeMeta"
+                - type: object
+                  properties:
+                    list:
+                      type: array
+                      items: { $ref: "#/components/schemas/AIWaterPrediction" }
+                    modelVersion: { type: string }
+
+    AIWaterRiskSite:
+      type: object
+      required: [pointCode, riskLevel, currentLevel, predictLevel, riskTime, ruleId, rainScene, appliedThreshold]
+      properties:
+        pointCode: { type: string }
+        riskLevel: { type: string, enum: [low, medium, high] }
+        currentLevel: { type: number, description: 当前实测水位（米） }
+        predictLevel: { type: number, description: 预测峰值水位（米） }
+        riskTime: { type: integer, description: 风险判定时刻（仿真时钟秒） }
+        ruleID: { type: string, description: 命中的规则标识 }
+        ruleId: { type: string, description: 命中的规则标识 }
+        rainScene:
+          type: string
+          description: 雨情场景；v3 无此模型（条款 8-1 留白），恒为 unspecified
+        appliedThreshold: { type: number, description: 本次适用的阈值（绝对高程，米） }
+      additionalProperties: true
+      description: |
+        扩展字段：`warnLevel`、`siteName`、`district`、`warnScore`、`durationMin`、
+        `slopeMH`、`reason`。
+
+    AIWaterRiskResponse:
+      allOf:
+        - $ref: "#/components/schemas/AIWaterEnvelope"
+        - type: object
+          properties:
+            data:
+              allOf:
+                - $ref: "#/components/schemas/AIWaterTimeMeta"
+                - type: object
+                  properties:
+                    total: { type: integer }
+                    list:
+                      type: array
+                      items: { $ref: "#/components/schemas/AIWaterRiskSite" }
+
+    AIWaterAlertRecord:
+      type: object
+      required: [warningId, pointCode, level, triggerValue, threshold, rainScene, triggerTime, status, eventId]
+      properties:
+        warningId: { type: string }
+        pointCode: { type: string }
+        level: { type: string, enum: [low, medium, high], description: 对外三级预警等级 }
+        triggerValue: { type: number, description: 触发时的水位值（米） }
+        threshold: { type: number, description: 适用的阈值（绝对高程，米） }
+        rainScene: { type: string, description: 恒为 unspecified }
+        triggerTime: { type: integer, description: 触发时刻（仿真时钟秒） }
+        status: { type: string, enum: [active, acknowledged, cleared] }
+        eventId: { type: string, description: 与 A-8 生命周期记录串联的标识 }
+      additionalProperties: true
+      description: |
+        扩展字段：`warnLevel`（原始四级）、`state`（我方四态机原始状态）、
+        `siteName`、`district`、`score`、`durationMin`、`slopeMH`、`reason`、
+        `assignee`、`disposition`、`ackedAt`、`clearedAt`。
+
+    AIWaterAlertPage:
+      allOf:
+        - $ref: "#/components/schemas/AIWaterEnvelope"
+        - type: object
+          properties:
+            data:
+              allOf:
+                - $ref: "#/components/schemas/AIWaterPage"
+                - $ref: "#/components/schemas/AIWaterTimeMeta"
+                - type: object
+                  properties:
+                    list:
+                      type: array
+                      items: { $ref: "#/components/schemas/AIWaterAlertRecord" }
+
+    AIWaterRainRule:
+      type: object
+      required: [ruleId, pointCode, monitorItemCode, rainScene, thresholdUpper, thresholdLower, level, enabled, effectTime, version]
+      properties:
+        ruleId: { type: string }
+        pointCode: { type: string }
+        monitorItemCode: { type: string, description: 监测项编码，目前只有 water_level }
+        rainScene: { type: string, description: 恒为 unspecified }
+        thresholdUpper: { type: number, description: 阈值上界（绝对高程，米） }
+        thresholdLower: { type: number, description: 阈值下界（绝对高程，米） }
+        level: { type: string, enum: [blue, yellow, orange, red] }
+        enabled: { type: boolean }
+        effectTime: { type: integer, description: 生效时刻（仿真时钟秒） }
+        version: { type: string, description: 规则版本，如 rules-1.0 }
+      additionalProperties: true
+
+    AIWaterRainRuleResponse:
+      allOf:
+        - $ref: "#/components/schemas/AIWaterEnvelope"
+        - type: object
+          properties:
+            data:
+              allOf:
+                - $ref: "#/components/schemas/AIWaterTimeMeta"
+                - type: object
+                  properties:
+                    total: { type: integer }
+                    version: { type: string }
+                    list:
+                      type: array
+                      items: { $ref: "#/components/schemas/AIWaterRainRule" }
+
+    AIWaterModelVersion:
+      type: object
+      required: [versionId, versionName, taskType, deployTime, status]
+      properties:
+        versionId: { type: string }
+        versionName: { type: string }
+        taskType: { type: string, description: 目前只有 water_level_forecast }
+        deployTime: { type: integer, description: 部署时刻（Unix 秒） }
+        status: { type: string, enum: [active, idle] }
+      additionalProperties: true
+      description: |
+        扩展字段：`active`、`rmse3h`、`skill3h`、`folds`、`trainSeconds`、`sizeMb`。
+
+    AIWaterModelResponse:
+      allOf:
+        - $ref: "#/components/schemas/AIWaterEnvelope"
+        - type: object
+          properties:
+            data:
+              allOf:
+                - $ref: "#/components/schemas/AIWaterTimeMeta"
+                - type: object
+                  properties:
+                    total: { type: integer }
+                    activeVersion: { type: string }
+                    effectiveTime: { type: integer, description: 切换生效时刻（仅 action=switch） }
+                    list:
+                      type: array
+                      items: { $ref: "#/components/schemas/AIWaterModelVersion" }
+
+    AIWaterTaskSubmitResponse:
+      allOf:
+        - $ref: "#/components/schemas/AIWaterEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [taskId, submitTime, status, duplicate]
+              properties:
+                taskId: { type: string }
+                submitTime: { type: integer, description: 提交时刻（墙钟 Unix 秒） }
+                status: { type: string, enum: [queued, running, success, failed] }
+                duplicate:
+                  type: boolean
+                  description: 是否命中 requestId 幂等（true = 此前已提交，返回同一个任务）
+
+    AIWaterTaskStatusResponse:
+      allOf:
+        - $ref: "#/components/schemas/AIWaterEnvelope"
+        - type: object
+          properties:
+            data:
+              allOf:
+                - $ref: "#/components/schemas/AIWaterTimeMeta"
+                - type: object
+                  properties:
+                    taskId: { type: string }
+                    status: { type: string, enum: [queued, running, success, failed] }
+                    progress: { type: integer, description: 进度百分比 0~100 }
+                    errorCode:
+                      type: string
+                      enum: [INPUT_MISSING, MODEL_UNAVAILABLE, TIMEOUT, QUOTA_EXCEEDED, INTERNAL]
+                    errorMsg: { type: string }
+                    resultUrl:
+                      type: string
+                      description: 恒为空串；结果直接放在 resultList 里
+                    resultList:
+                      type: array
+                      items: { $ref: "#/components/schemas/AIWaterPrediction" }
+                    callbackStatus: { type: string, enum: [ok, failed, skipped] }
+                    callbackMsg: { type: string }
+                    submitTime: { type: integer }
+                    updateTime: { type: integer }
+
+    AIWaterLifecycleRecord:
+      type: object
+      required: [eventId, pointCode, stage, operator, operateTime, conclusion, evidenceUrls]
+      properties:
+        eventId: { type: string }
+        pointCode: { type: string }
+        stage: { type: string, enum: [发现, 复核, 核销] }
+        operator: { type: string }
+        operateTime: { type: integer, description: 操作时刻（Unix 秒） }
+        conclusion: { type: string }
+        evidenceUrls:
+          type: array
+          items: { type: string }
+      additionalProperties: true
+      description: "扩展字段：`source`（icm / local）、`siteName`、`district`"
+
+    AIWaterLifecyclePage:
+      allOf:
+        - $ref: "#/components/schemas/AIWaterEnvelope"
+        - type: object
+          properties:
+            data:
+              allOf:
+                - $ref: "#/components/schemas/AIWaterPage"
+                - $ref: "#/components/schemas/AIWaterTimeMeta"
+                - type: object
+                  properties:
+                    list:
+                      type: array
+                      items: { $ref: "#/components/schemas/AIWaterLifecycleRecord" }
+
+    AIWaterEventResult:
+      type: object
+      required: [accepted, duplicate, signatureVerified, eventIds, receivedAt]
+      properties:
+        accepted: { type: integer, description: 本次真正写入的事件条数 }
+        duplicate: { type: integer, description: 幂等命中的条数 }
+        signatureVerified: { type: boolean, description: 验签是否通过 }
+        eventIds:
+          type: array
+          items: { type: string }
+        receivedAt: { type: integer, description: 收到时刻（墙钟 Unix 秒） }
+
+    AIWaterEventResultResponse:
+      allOf:
+        - $ref: "#/components/schemas/AIWaterEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/AIWaterEventResult" }
+
     Error:
       type: object
       required: [error]

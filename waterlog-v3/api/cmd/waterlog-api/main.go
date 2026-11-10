@@ -108,6 +108,11 @@ func main() {
 	}
 
 	api := httpapi.New(cfg, svc, eng, st, auth, notifier, log, gatewayHealth(gw))
+
+	// 网关的异步任务执行器挂在同一个 bgCtx 上：进程优雅退出时它跟着停，
+	// 不会在 HTTP 已关但后台还在写任务状态的情况下留下半个 goroutine。
+	go api.StartAIWaterWorker(bgCtx)
+
 	srv := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
 		Handler:           api.Routes(),

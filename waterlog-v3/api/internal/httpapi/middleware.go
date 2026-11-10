@@ -9,11 +9,16 @@ import (
 )
 
 // CORS 允许前端在任意端口调试（开发期 vite 与生产同源都走这里）。
+//
+// 放行的请求头里多了 Authorization 与 X-AIWater-Token：
+// 前者给网关的 Bearer 鉴权，后者给对方的回调通道。
+// 只放行 Content-Type 的话，对方 SDK 的第一个预检请求就会失败，
+// 而且失败信息是浏览器控制台里的 CORS 报错——排查起来最费时间的那种。
 func CORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type,Authorization,X-AIWater-Token,X-AIWater-Signature")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(204)
 			return

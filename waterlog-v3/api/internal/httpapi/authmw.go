@@ -209,8 +209,29 @@ func summarize(r *http.Request) string {
 		return "账号管理"
 	case strings.HasPrefix(p, "/api/notify/"):
 		return "推送渠道管理"
+	case strings.HasPrefix(p, "/api/aiwater/v1/"):
+		return aiwaterAuditSummary(p)
 	}
 	return r.Method + " " + p
+}
+
+// aiwaterAuditSummary 把网关路径翻译成一句人话。
+//
+// 网关是对方平台在调我们，它没有我们的账号体系，
+// 所以审计记录里的 username 会是空的——这没关系，
+// 路径本身能说明是谁在什么时候动了什么。
+func aiwaterAuditSummary(path string) string {
+	switch {
+	case strings.HasSuffix(path, "/model/versions"):
+		return "网关切换模型版本"
+	case strings.HasSuffix(path, "/prediction/task/submit"):
+		return "网关提交预测任务"
+	case strings.HasSuffix(path, "/event/receive"):
+		return "网关接收平台事件"
+	case strings.HasSuffix(path, "/config/rainrule"):
+		return "网关查询雨情规则"
+	}
+	return "网关调用 " + path
 }
 
 func clientIP(r *http.Request) string {

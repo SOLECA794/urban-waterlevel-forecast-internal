@@ -62,6 +62,17 @@ type Config struct {
 	// 注意这里没有"会话签名密钥"：会话用的是存在库里的不透明随机令牌，
 	// 不是签名 cookie，所以不需要一个服务端密钥来防伪造。
 	IngestToken string
+	// AIWaterToken 保护 /api/aiwater/v1/* 的对外网关接口。
+	//
+	// 默认空 = 不校验。本机单机跑的时候，多配一个密钥只是多一处会配错的地方；
+	// 一旦网关对外暴露，这个值必须设置。
+	AIWaterToken string
+	// AIWaterEventSecret 是 A-9 事件接收端的共享密钥，用于 HMAC 验签。
+	//
+	// 与 AIWaterToken 分开是刻意的：A-9 是对方平台**推给我方**的入站回调，
+	// 对方不会带它自己的 accessToken，只能靠共享密钥验明来源。
+	// 留空时事件仍然接收，但响应里会标注 signatureVerified=false。
+	AIWaterEventSecret string
 }
 
 // Load 从环境变量读取配置。变量缺失或无法解析时回落到默认值——
@@ -79,6 +90,8 @@ func Load() Config {
 		SessionTTLH:            envInt("WL_SESSION_TTL_H", DefaultSessionTTLH),
 		BootstrapAdminPassword: envStr("WL_BOOTSTRAP_ADMIN_PASSWORD", DefaultBootstrapPassword),
 		IngestToken:            envStr("WL_INGEST_TOKEN", ""),
+		AIWaterToken:           envStr("WL_AIWATER_TOKEN", ""),
+		AIWaterEventSecret:     envStr("WL_AIWATER_EVENT_SECRET", ""),
 	}
 }
 

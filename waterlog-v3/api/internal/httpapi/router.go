@@ -96,6 +96,37 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/notify/deliveries", s.listDeliveries)
 			r.Post("/notify/test", s.testChannel)
 		})
+		// ---- AI 平台自研网关（/api/aiwater/v1/*）
+		//
+		// 与上面的 v3 原生段是两套并存的对外契约：
+		// 原生段是「裸 JSON / 错误 {"error":...} / snake_case」，
+		// 网关段是「{code:"0",msg,data} / 字符串码 / camelCase」。
+		// 两套都不能改，所以网关自己写一套响应出口，不复用 writeJSON/fail。
+		//
+		// 鉴权也分两段：A-9 是对方**推给我方**的入站回调，
+		// 对方不会带它自己的 accessToken，只能靠共享密钥验签，
+		// 所以它挂在 Token 中间件**外面**。
+		// 注意这里挂的是 "/aiwater/v1" 而不是 "/api/aiwater/v1"：
+		// 本组已经处在 r.Route("/api", ...) 之下，再写一遍 /api 会得到
+		// /api/api/aiwater/v1——这种错路由不会报错，只会让所有调用拿到 404。
+		r.Route("/aiwater/v1", func(r chi.Router) {
+			// A-9 平台事件接收（免平台 Token，验签 + 幂等 + 必返 HTTP 200）
+			r.Post("/event/receive", s.aiwaterEventReceive)
+
+			r.Group(func(r chi.Router) {
+				r.Use(RequireAIWaterToken(s.cfg.AIWaterToken))
+				// A-1 ~ A-5：预测结果 / 风险实时 / 预警记录 / 雨情规则 / 模型版本
+				r.Post("/prediction/result", s.aiwaterPrediction)
+				r.Post("/risk/realtime", s.aiwaterRiskRealtime)
+				r.Post("/warning/records", s.aiwaterWarningRecords)
+				r.Post("/config/rainrule", s.aiwaterRainRules)
+				r.Post("/model/versions", s.aiwaterModelVersions)
+				// A-6 ~ A-8：异步任务提交 / 状态查询 / 事件生命周期
+				r.Post("/prediction/task/submit", s.aiwaterTaskSubmit)
+				r.Post("/prediction/task/status", s.aiwaterTaskStatus)
+				r.Post("/waterlogging/event/lifecycle", s.aiwaterLifecycle)
+			})
+		})
 	})
 
 	s.mountStatic(r)

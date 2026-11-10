@@ -22,7 +22,19 @@ type Server struct {
 	log      *slog.Logger
 	// gw 是 ICM 集成网关的健康快照来源；网关未启用时为 nil。
 	gw GatewayHealth
+	// aiwaterQueue 是 A-6 预测任务的执行队列。
+	//
+	// 用带缓冲的 channel 而不是无缓冲：无缓冲时提交方会被 worker 的处理速度
+	// 拖住，而提交接口的语义是「立刻返回 taskId」，不该等计算。
+	// 缓冲满了就返回 503（任务已落库，不会丢），由对方重试。
+	aiwaterQueue chan string
 }
+
+// aiwaterQueueSize 是预测任务队列的容量。
+//
+// 32 是个够用的数：对方的提交频率通常是分钟级，
+// 而单个任务 300ms 就跑完，队列只在突发峰值时才会积压。
+const aiwaterQueueSize = 32
 
 // New 装配适配层。cfg 用来读 WebDir（静态托管）与日志级别。
 //
@@ -37,5 +49,15 @@ func New(
 	log *slog.Logger,
 	gw GatewayHealth,
 ) *Server {
-	return &Server{cfg: cfg, svc: svc, eng: eng, store: st, auth: a, notifier: n, log: log, gw: gw}
+	return &Server{
+		cfg:          cfg,
+		svc:          svc,
+		eng:          eng,
+		store:        st,
+		auth:         a,
+		notifier:     n,
+		log:          log,
+		gw:           gw,
+		aiwaterQueue: make(chan string, aiwaterQueueSize),
+	}
 }
