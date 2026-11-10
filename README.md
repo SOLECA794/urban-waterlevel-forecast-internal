@@ -29,3 +29,8 @@ cd frontend
 npm install
 npm run dev
 ```
+---
+
+## 交付说明
+
+仓库定位、GitHub 可见性、有意排除的内容、两个已修的 `.gitignore` 缺陷、线上状态、接手入口与已知未修问题，见 **[waterlog-v3/DELIVERY.md](waterlog-v3/DELIVERY.md)**。
