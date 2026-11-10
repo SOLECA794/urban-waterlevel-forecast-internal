@@ -16,7 +16,11 @@ CLUADE.md
 *.db
 *.sqlite
 *.parquet
-data/
+# /data/ 只锚定仓库根的 data；写成裸 `data/` 会连
+# waterlog-v3/web/src/data（前端数据层源码）一起忽略掉
+/data/
+# backend/data 是运行期数据库与日志，按路径排除
+/backend/data/
 # sdd 目录整体不上传
 
 sdd/
