@@ -55,6 +55,8 @@ tags:
     description: 演练控制（生产环境应关闭）
   - name: ingest
     description: 数据接入（引擎推、或外部数据源推）
+  - name: icm
+    description: ICM 集成适配网关（外部真实数据源接入）
 
 paths:
   # ============================================================== system
@@ -925,6 +927,46 @@ paths:
                         site_id: { type: string }
                         action: { type: string, enum: [raised, upgraded, updated, cleared, none] }
 
+  # ============================================================== icm
+  /api/icm/health:
+    get:
+      tags: [icm]
+      summary: ICM 集成适配网关健康度
+      description: |
+        外部真实数据源（黄岩区城市内涝基础平台 / Infovision iCM）的接入网关健康快照。
+
+        **需登录**（任何已登录角色即可读）。放在只读段而不是公开段：快照里带着
+        对方地址、接入点、映射告警等内部集成状态，属于内部信息。
+
+        网关未启用（未配置 `WL_ICM_BASE_URL`）时同样返回 **200**，
+        `status` 为 `not_enabled` —— 不是 404。端点本身一直在，只是能力没开；
+        返回 404 会让前端误判成「这个接口不存在」。
+
+        `status` 三态：
+        - `not_enabled`：网关未启用
+        - `ok`：最近一次同步成功
+        - `degraded`：最近一次同步失败，已进入退避重试
+      responses:
+        "200":
+          description: 网关健康快照（未启用时 status=not_enabled）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ICMHealth"
+                  - type: object
+                    required: [status, message]
+                    properties:
+                      status:
+                        type: string
+                        enum: [not_enabled, ok, degraded]
+                      message: { type: string, description: 状态说明，可直接展示 }
+        "401":
+          description: 未登录
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   # ============================================================== stream
   /api/events:
     get:
@@ -1053,6 +1095,51 @@ components:
         rows:
           type: array
           items: { $ref: "#/components/schemas/TelemetryRow" }
+
+    ICMHealth:
+      type: object
+      description: ICM 集成适配网关的健康快照（字段与 internal/icm.HealthStatus 一一对应）。
+      required: [enabled, intervalSec, totalRuns, totalFailures, consecutiveFails, degraded]
+      properties:
+        enabled: { type: boolean, description: 是否配置了对方地址（WL_ICM_BASE_URL） }
+        intervalSec: { type: integer, description: 当前生效的同步间隔（秒，含退避） }
+        totalRuns: { type: integer, description: 累计执行次数 }
+        totalFailures: { type: integer, description: 累计失败次数 }
+        consecutiveFails: { type: integer, description: 当前连续失败次数，成功一次即归零 }
+        degraded: { type: boolean, description: 是否处于降级状态（连续失败 ≥ 1） }
+        lastRunAt: { type: integer, description: 最近一次执行时刻（Unix 秒，真实时间轴） }
+        lastSuccessAt: { type: integer, description: 最近一次成功时刻（Unix 秒）；从未成功为 0 }
+        lastError:
+          type: string
+          description: |
+            最近一次失败原因。**成功之后也不清空** —— 它回答「上一次为什么失败」，
+            而不是「现在有没有错」（后者由 degraded / consecutiveFails 回答）。
+        lastRows: { type: integer, description: 最近一次成功写入的行数 }
+        lastReport:
+          nullable: true
+          type: object
+          description: 最近一次执行的完整报告
+          properties:
+            source: { type: string, example: "icm:R1/realtime" }
+            ingestUrl: { type: string, description: 写入端点（dry-run 时并不会被调用） }
+            dryRun: { type: boolean, description: 是否只报告不写库 }
+            pushedRows: { type: integer, description: 实际写入行数（dry-run 时恒为 0） }
+            wouldPush: { type: integer, description: 本应写入的行数 }
+            warnings:
+              type: array
+              items: { type: string }
+            map:
+              type: object
+              properties:
+                input: { type: integer }
+                output: { type: integer }
+                skipped_no_site_id: { type: integer }
+                skipped_bad_time: { type: integer }
+                skipped_no_value: { type: integer }
+                timeBasis: { type: string, enum: [real, simulated] }
+                warnings:
+                  type: array
+                  items: { type: string }
 
     Factors:
       type: object
@@ -1441,7 +1528,7 @@ components:
         duration_ms: { type: number }
         ip: { type: string }
         request_id: { type: string }
-        summary: { type: string, description: 人读的一句话，如「确认预警 #202」 }
+        summary: { type: string, description: "人读的一句话，如「确认预警 #202」" }
 
     NotifyChannel:
       type: object

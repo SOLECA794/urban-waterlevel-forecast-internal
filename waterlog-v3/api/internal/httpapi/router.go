@@ -64,6 +64,7 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/models/versions", s.proxyGet("/models/versions"))
 			r.Get("/retrain/status", s.proxyGet("/retrain/status"))
 			r.Get("/events", s.events)
+			r.Get("/icm/health", s.icmHealth)
 		})
 
 		// ---- 值班员及以上：写端

@@ -13,6 +13,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,6 +22,7 @@ import (
 
 	"waterlog-v3/api/internal/config"
 	"waterlog-v3/api/internal/httpapi"
+	"waterlog-v3/api/internal/icm"
 	"waterlog-v3/api/internal/platform/logx"
 	"waterlog-v3/api/internal/service"
 	"waterlog-v3/api/internal/store"
@@ -81,6 +83,10 @@ func main() {
 	}
 	notifier.EnsureChannels(svc.NowTS())
 
+	// ICM 集成网关：可选能力。缺省不启用，未配置时 v3 的行为与改造前完全一致。
+	gw := buildICMGateway(svc, log)
+	log.Info("ICM 网关", "enabled", gw != nil)
+
 	log.Info("启动完成",
 		"version", version,
 		"sites", len(svc.Sites()),
@@ -95,7 +101,13 @@ func main() {
 	defer bgCancel()
 	go svc.StartPrune(bgCtx, cfg.PruneKeepHours, 5*time.Minute)
 
-	api := httpapi.New(cfg, svc, eng, st, auth, notifier, log)
+	// 网关挂在同一个 bgCtx 上：进程优雅退出时它跟着停，
+	// 不会在 HTTP 已关但后台还在拉数的情况下留下半个 goroutine。
+	if gw != nil {
+		go gw.Run(bgCtx)
+	}
+
+	api := httpapi.New(cfg, svc, eng, st, auth, notifier, log, gatewayHealth(gw))
 	srv := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
 		Handler:           api.Routes(),
@@ -125,6 +137,56 @@ func main() {
 	}
 	<-idle
 	log.Info("已退出")
+}
+
+// buildICMGateway 装配 ICM 集成网关。
+//
+// 返回 nil 表示「网关不启用」，有两种原因，二者都不该让 v3 起不来：
+//   - 没配 WL_ICM_BASE_URL：这是缺省状态，v3 的行为必须与改造前完全一致；
+//   - 配了但配错了（如 timeBasis 非法、simulated 基准拿不到仿真时钟）：
+//     记一条错误日志然后跳过，不让一个可选能力把整个服务拖垮。
+//
+// 仿真时钟从 svc.NowTS 取：icm 包不认识 v3 的 store，只能由调用方注入
+// （反向依赖会把包依赖搞成环，见 internal/icm/gateway.go 的说明）。
+func buildICMGateway(svc *service.Service, log *slog.Logger) *icm.Gateway {
+	parts, ok, err := icm.GatewayConfigFromEnv(svc.NowTS)
+	if err != nil {
+		log.Error("ICM 网关装配失败，本次不启用", "err", err)
+		return nil
+	}
+	if !ok {
+		return nil
+	}
+	// 客户端日志与网关日志都汇进 slog：对方接口抖动时，
+	// 只有「同步失败」一行是不够的，得能看到具体是哪个请求失败。
+	parts.Client.SetLogger(func(format string, args ...any) {
+		log.Info(fmt.Sprintf("[icm] "+format, args...))
+	})
+	return icm.NewGateway(
+		parts.Config,
+		parts.Src,
+		parts.Sink,
+		parts.Points,
+		parts.Map,
+		icm.GatewayOptions{
+			Interval: parts.Interval,
+			Logger: func(format string, args ...any) {
+				log.Info(fmt.Sprintf(format, args...))
+			},
+		},
+	)
+}
+
+// gatewayHealth 把网关转成 httpapi 需要的健康快照来源。
+//
+// 为什么要单独转一层：把一个 nil 的 *icm.Gateway 直接塞进接口，
+// 接口值并不为 nil，httpapi 侧会以为「网关存在」而去调它的方法。
+// 只有在这里显式判过 nil，「未启用」才能被正确表达。
+func gatewayHealth(gw *icm.Gateway) httpapi.GatewayHealth {
+	if gw == nil {
+		return nil
+	}
+	return gw
 }
 
 // runHealthcheck 供容器 healthcheck 使用：容器里没有 curl，二进制自带最省事。

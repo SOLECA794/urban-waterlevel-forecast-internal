@@ -20,9 +20,13 @@ type Server struct {
 	auth     *service.Auth
 	notifier *service.Notifier
 	log      *slog.Logger
+	// gw 是 ICM 集成网关的健康快照来源；网关未启用时为 nil。
+	gw GatewayHealth
 }
 
 // New 装配适配层。cfg 用来读 WebDir（静态托管）与日志级别。
+//
+// gw 为 nil 表示 ICM 网关未启用——那是一个合法状态，不是装配错误。
 func New(
 	cfg config.Config,
 	svc *service.Service,
@@ -31,6 +35,7 @@ func New(
 	a *service.Auth,
 	n *service.Notifier,
 	log *slog.Logger,
+	gw GatewayHealth,
 ) *Server {
-	return &Server{cfg: cfg, svc: svc, eng: eng, store: st, auth: a, notifier: n, log: log}
+	return &Server{cfg: cfg, svc: svc, eng: eng, store: st, auth: a, notifier: n, log: log, gw: gw}
 }
