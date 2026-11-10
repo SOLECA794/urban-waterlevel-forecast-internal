@@ -14,6 +14,8 @@ Git4GenThinking/
 .zcodeignore
 CLUADE.md
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.parquet
 # /data/ 只锚定仓库根的 data；写成裸 `data/` 会连
@@ -21,6 +23,9 @@ CLUADE.md
 /data/
 # backend/data 是运行期数据库与日志，按路径排除
 /backend/data/
+# v3 引擎运行期产物：训练好的模型、评测库、数据集、规则导出
+# （源码在 waterlog-v3/engine/ 下，产物不入库）
+waterlog-v3/engine/data/
 # sdd 目录整体不上传
 
 sdd/
