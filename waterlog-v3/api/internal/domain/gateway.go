@@ -104,10 +104,11 @@ type AIWaterPrediction struct {
 	// 保留修正前数值是条款 9-6「多源协同动态修正」的要求：
 	// 修正值与原值必须同时可查，否则事后无法复盘「当时改了没有、改了多少」。
 	Revision float64 `json:"revision"`
-	// CorrectionID 修正记录标识，形如 {pointCode}:{period}:{modelVersion}:{issuedAt}。
+	// CorrectionID 修正记录标识，形如 {pointCode}:{period}:{modelVersion}。
 	//
 	// 它是幂等键：按「点位 + 时段 + 版本号」唯一，
 	// 同一份修正被重复下发时不会产生第二条记录。
+	// 不掺发布时刻——发布时刻每轮都变，掺进去键就不再唯一。
 	CorrectionID string `json:"correctionId"`
 
 	// ---- 以下为扩展字段，保留我方原始口径，避免信息在映射中丢失 ----

@@ -1481,7 +1481,7 @@ components:
           description: 修正**前**的预测水位；与 predictLevel 同时保留是为了可复盘「改了多少」
         correctionId:
           type: string
-          description: "修正记录标识 {pointCode}:{period}:{modelVersion}:{issuedAt}，幂等键"
+          description: "修正记录标识 {pointCode}:{period}:{modelVersion}，幂等键；不掺发布时刻"
       additionalProperties: true
       description: |
         扩展字段（我方原始口径，保留以免信息在映射中丢失）：

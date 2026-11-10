@@ -335,7 +335,11 @@ func (s *Server) buildPredictions(
 				Confidence:   aiwaterConfidence(h.Level, h.Sigma),
 				ModelVersion: fc.ModelVersion,
 				Revision:     sf.NowLevel + h.DeltaRaw,
-				CorrectionID: fmt.Sprintf("%s:%s:%s:%d", siteID, period, fc.ModelVersion, fc.IssuedAt),
+				// 幂等键按「点位 + 时段 + 版本号」三要素构造，与表五 R-06
+				// 的「点位 + 时段 + 版本号」幂等写入口径一致。
+				// 刻意不把 issuedAt 拼进键里：发布时刻每轮都变，
+				// 掺进去之后同一份修正每次都会生成新键，幂等就失效了。
+				CorrectionID: fmt.Sprintf("%s:%s:%s", siteID, period, fc.ModelVersion),
 				WarnLevel:    warnLevel,
 				Lower:        h.Lower,
 				Upper:        h.Upper,
