@@ -1,6 +1,7 @@
 import { cloneElement, isValidElement, useRef, type CSSProperties, type ReactElement, type PointerEvent as RPointerEvent } from 'react'
 import type { Rect, WidgetId } from './layout'
 import { MIN_H, MIN_W, WIDGET_TITLE, clampRect } from './layout'
+import { useSceneRuntime } from './scene'
 import type { Palette } from './theme'
 
 /**
@@ -11,6 +12,11 @@ import type { Palette } from './theme'
  *
  * 坐标换算：画布整体有 transform: scale()，指针位移是屏幕像素，
  * 必须除以 scale 才是画布像素，否则在非 1920×1080 的屏上会「拖得比鼠标慢」。
+ *
+ * 场景可见性：不在当前场景里的组件**不卸载，只淡出**。
+ * 卸载会让 SVG 图表重算、地图重新取瓦片，切屏时出现一片空白；
+ * 淡出则什么都不用重建。整层的「淡出→换版面→淡入」由 BoardPage 负责，
+ * 这里只管自己这一块该不该露脸。
  */
 export function Widget({
   id,
@@ -31,6 +37,8 @@ export function Widget({
   onCommit: () => void
   children: ReactElement<{ style?: CSSProperties }>
 }) {
+  const scene = useSceneRuntime()
+  const visible = scene ? scene.visible.has(id) : true
   const drag = useRef<{ mode: 'move' | 'resize'; x: number; y: number; rect: Rect } | null>(null)
 
   const start = (mode: 'move' | 'resize') => (e: RPointerEvent<HTMLDivElement>) => {
@@ -68,13 +76,19 @@ export function Widget({
 
   return (
     <div
+      aria-hidden={visible ? undefined : true}
       style={{
         position: 'absolute',
         left: rect.x,
         top: rect.y,
         width: rect.w,
         height: rect.h,
-        zIndex: editing ? 20 : 4,
+        zIndex: editing ? 20 : visible ? 4 : 3,
+        opacity: visible ? 1 : 0,
+        pointerEvents: visible ? 'auto' : 'none',
+        // 淡出用 260ms：比整层的叠化略短，组件在层还没完全暗下来时就已经退场，
+        // 观感上是「内容先走、幕布再落」，而不是两层同时变灰。
+        transition: editing ? undefined : 'opacity 260ms ease',
         outline: editing ? `1.5px dashed ${p.accent}99` : undefined,
         outlineOffset: 2,
         borderRadius: 16,

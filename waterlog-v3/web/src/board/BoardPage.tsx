@@ -25,6 +25,7 @@ import { Widget } from './widget'
 import {
   PRESET_LABEL,
   PRESETS,
+  WIDGET_IDS,
   clearLayout,
   loadLayout,
   saveLayout,
@@ -33,9 +34,15 @@ import {
   type Rect,
   type WidgetId,
 } from './layout'
+import { SCENES, SceneProvider } from './scene'
+import { useSceneRotation } from './useRotation'
 
 /**
- * 大厅大屏 —— 一屏超集，无人交互。
+ * 大厅大屏 —— 五屏轮播，无人交互。
+ *
+ * 第 0 屏「全域态势」是**一屏超集**（22 个组件全在），也就是主页；
+ * 其余四屏是把它按数据类别切开、每屏只讲一件事。切屏用整层叠化，
+ * 不是新开路由 —— 大屏没有导航，观众不会去点。
  *
  * 三层的说法已经作废，现在是两层，而且没有暗色层：
  *   1. 真实地图底图（高德浅色路网瓦片，铺满整屏，不倾斜）
@@ -45,6 +52,9 @@ import {
  *   - 不接抽象示意图，要真实地图：值班看屏第一反应是「这条街我认不认识」。
  *   - 整页不许有暗区：深色演播室背景与四周压暗都删了，最底层是浅色天光。
  *   - 面板半透明但不毛玻璃：模糊会把街道糊成一片奶白，层次反而塌。
+ *
+ * 场景层的契约见 `scene.tsx`；动效与轮播纪律见 `useRotation.ts`；
+ * 完整设计契约见 `docs/10-大屏轮播场景设计契约.md`。
  */
 
 /** 决策信号的中文名。键来自引擎的 agent._signals()，写死在这里是有意的：
@@ -168,6 +178,24 @@ function boardCss(): string {
     0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34,211,238,0.55); }
     50%      { opacity: 0.75; box-shadow: 0 0 0 4px rgba(34,211,238,0); }
   }
+  /* 场景叠化：整层淡出 → 换版面 → 淡入。
+     两段都短（180ms / 320ms）：大屏是给远处的人看的，
+     淡入淡出拖长了就像幻灯片在「找下一张」，反而打断注意力。 */
+  .bp-stage-in { animation: bpStageIn 320ms cubic-bezier(.22,.68,.28,1) both; }
+  @keyframes bpStageIn {
+    from { opacity: 0; transform: scale(1.012); }
+    to   { opacity: 1; transform: none; }
+  }
+  .bp-stage-out { animation: bpStageOut 180ms ease both; }
+  @keyframes bpStageOut {
+    from { opacity: 1; }
+    to   { opacity: 0; }
+  }
+  /* 轮播进度条：CSS 动画推进，逐帧 setState 会让整棵 1920×1080 的树 60fps 重渲染 */
+  @keyframes bpProgress {
+    from { transform: scaleX(0); }
+    to   { transform: scaleX(1); }
+  }
   .bp-fade, .bp-live { will-change: opacity, transform; }
   `
 }
@@ -193,6 +221,65 @@ export default function BoardPage() {
     setLayout(next)
     saveLayout(next)
   }
+
+  /* ------------------------------------------------------------------
+     场景轮播。
+
+     轮播不是「切页面」，是「同一块画布按节拍换一套版面」。所以：
+       - 目标场景由 useSceneRotation 推进（到点换屏）；
+       - 实际渲染的场景由下面的两阶段叠化控制：
+         先把整层淡出，再换坐标，最后淡入。
+         这样地图瓦片、图表都是按最终尺寸一次性算好的，
+         不会出现过渡中容器被拉伸、瓦片没铺满的破面。
+       - 「主页」沿用用户手拖过的版面；其余场景用各自固定坐标。
+         没被场景显式指定坐标的组件继续沿用当前版面，于是
+         「切到别的场景再切回来」不会把用户调好的主页版面弄丢。
+  ------------------------------------------------------------------ */
+  const sceneParams = useMemo(() => new URLSearchParams(window.location.search), [])
+  const sceneLocked = sceneParams.get('scene') != null
+  const initialScene = useMemo(() => {
+    const raw = sceneParams.get('scene')
+    const n = raw == null ? NaN : Number(raw)
+    return Number.isFinite(n) && n >= 0 && n < SCENES.length ? n : 0
+  }, [sceneParams])
+
+  const carousel = useSceneRotation({
+    count: SCENES.length,
+    durationMs: (i) => SCENES[i]?.durationMs ?? 18000,
+    locked: sceneLocked,
+    initial: initialScene,
+  })
+
+  // 渲染中的场景（叠化落后于目标场景）
+  const [shown, setShown] = useState(carousel.index)
+  // 'in' = 正常显示；'out' = 正在淡出，等它落完再换版面
+  const [phase, setPhase] = useState<'in' | 'out'>('in')
+  useEffect(() => {
+    if (carousel.index === shown) return
+    setPhase('out')
+    const t = window.setTimeout(() => {
+      setShown(carousel.index)
+      setPhase('in')
+    }, 180)
+    return () => window.clearTimeout(t)
+  }, [carousel.index, shown])
+
+  const scene = SCENES[shown] ?? SCENES[0]
+  const rects = useMemo<Record<WidgetId, Rect>>(
+    () => ({ ...layout.rects, ...scene.rects }) as Record<WidgetId, Rect>,
+    [layout.rects, scene.rects],
+  )
+  const visibleWidgets = useMemo<ReadonlySet<WidgetId>>(
+    () => new Set(scene.widgets === 'all' ? WIDGET_IDS : scene.widgets),
+    [scene.widgets],
+  )
+
+  /**
+   * 手动切场景：只切屏，不停轮播。
+   * 停轮播是「进布局编辑态」才做的事——那会儿用户要拖组件，
+   * 边转边拖会被场景切换立刻顶掉。
+   */
+  const gotoScene = (i: number) => carousel.setIndex(i)
 
   useEffect(() => {
     const apply = () => setScale(Math.min(window.innerWidth / W, window.innerHeight / H))
@@ -230,15 +317,15 @@ export default function BoardPage() {
   const worst = maxLevel(list.map((r) => r.assessment.level))
   const anchor = (overview.data?.issuedAt ?? forecast.data?.issuedAt ?? 0) as SimTime
 
-  const rotation = useMemo(() => [...list.filter((r) => isAlarm(r.assessment.level)), ...list.filter((r) => !isAlarm(r.assessment.level))], [list])
+  const stationRotation = useMemo(() => [...list.filter((r) => isAlarm(r.assessment.level)), ...list.filter((r) => !isAlarm(r.assessment.level))], [list])
   const [idx, setIdx] = useState(0)
   useEffect(() => {
-    if (rotation.length <= 1) return
-    const t = setInterval(() => setIdx((i) => (i + 1) % rotation.length), STATION_MS)
+    if (stationRotation.length <= 1) return
+    const t = setInterval(() => setIdx((i) => (i + 1) % stationRotation.length), STATION_MS)
     return () => clearInterval(t)
-  }, [rotation.length])
-  const safeIdx = Math.min(idx, Math.max(0, rotation.length - 1))
-  const cur: OverviewRow | undefined = rotation[safeIdx]
+  }, [stationRotation.length])
+  const safeIdx = Math.min(idx, Math.max(0, stationRotation.length - 1))
+  const cur: OverviewRow | undefined = stationRotation[safeIdx]
   const detail = useSiteDetail(cur?.site.id ?? '')
   const curSite = sites.data?.find((x) => x.id === cur?.site.id) ?? cur?.site
   const asm = detail.data?.forecast?.assessment ?? cur?.assessment
@@ -416,6 +503,80 @@ export default function BoardPage() {
               </span>
             </div>
 
+            {/* 场景切换器。这块屏常年无人操作，轮播是它的主导航，
+                所以「现在第几屏」必须一眼可见，而不是藏在某个角落。 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginLeft: 20 }}>
+              <span style={{ fontSize: 10, color: p.textFaint, letterSpacing: 1.5, marginRight: 2 }}>
+                {shown + 1}/{SCENES.length}
+              </span>
+              {SCENES.map((s, i) => {
+                const active = i === shown
+                return (
+                  <button
+                    key={s.key}
+                    onClick={() => gotoScene(i)}
+                    title={s.subtitle}
+                    style={{
+                      fontSize: 11.5,
+                      padding: '5px 11px',
+                      borderRadius: 999,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                      whiteSpace: 'nowrap',
+                      border: `1px solid ${active ? p.accent : p.panelLine}`,
+                      background: active ? p.accent : 'transparent',
+                      color: active ? '#fff' : p.textDim,
+                      transition: 'background 220ms ease, color 220ms ease, border-color 220ms ease',
+                    }}
+                  >
+                    {s.title}
+                  </button>
+                )
+              })}
+              <button
+                onClick={carousel.togglePlay}
+                aria-label={carousel.playing ? '暂停轮播' : '继续轮播'}
+                title={carousel.playing ? '暂停轮播' : '继续轮播'}
+                style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: 999,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: `1px solid ${p.panelLine}`,
+                  background: 'transparent',
+                  color: p.textDim,
+                  padding: 0,
+                }}
+              >
+                {/* 播放/暂停用几何图形，不用 emoji：字形在不同系统上不可控 */}
+                {carousel.playing ? (
+                  <span style={{ display: 'inline-flex', gap: 3 }}>
+                    <i style={{ width: 3, height: 11, background: 'currentColor', borderRadius: 1 }} />
+                    <i style={{ width: 3, height: 11, background: 'currentColor', borderRadius: 1 }} />
+                  </span>
+                ) : (
+                  <span style={{ width: 0, height: 0, borderTop: '6px solid transparent', borderBottom: '6px solid transparent', borderLeft: '9px solid currentColor', marginLeft: 2 }} />
+                )}
+              </button>
+              <span
+                style={{
+                  fontSize: 10.5,
+                  color: p.textFaint,
+                  maxWidth: 210,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  marginLeft: 4,
+                }}
+              >
+                {scene.subtitle}
+              </span>
+            </div>
+
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
               {(Object.keys(PRESETS) as PresetName[]).map((name) => (
                 <button
@@ -436,7 +597,21 @@ export default function BoardPage() {
                 </button>
               ))}
               <button
-                onClick={() => setEditing((v) => !v)}
+                onClick={() => {
+                  setEditing((v) => {
+                    const next = !v
+                    if (next) {
+                      // 进编辑态：回到主页并停轮播。
+                      // 预设与拖拽只改主页的版面，边转边拖会被场景切换立刻顶掉，
+                      // 用户会以为「拖了没反应」。
+                      gotoScene(0)
+                      if (!sceneLocked) carousel.setPlaying(false)
+                    } else if (!sceneLocked) {
+                      carousel.setPlaying(true)
+                    }
+                    return next
+                  })
+                }}
                 style={{
                   fontSize: 11,
                   padding: '4px 12px',
@@ -501,14 +676,49 @@ export default function BoardPage() {
             </div>
           </header>
 
+          {/* 轮播进度条：贴在顶栏下沿，当成标题栏的一条下划线。
+              进度由 CSS 动画推进，不逐帧 setState —— 见 useRotation.ts 的纪律 2。 */}
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              top: 60,
+              height: 2.5,
+              zIndex: 6,
+              background: 'rgba(12,60,90,0.08)',
+              pointerEvents: 'none',
+            }}
+          >
+            <div
+              key={`pg-${carousel.index}`}
+              style={{
+                height: '100%',
+                width: '100%',
+                transformOrigin: 'left center',
+                transform: 'scaleX(0)',
+                background: `linear-gradient(90deg, ${p.accent}, ${p.accent2})`,
+                animation: `bpProgress ${SCENES[carousel.index]?.durationMs ?? 18000}ms linear forwards`,
+                animationPlayState: carousel.playing ? 'running' : 'paused',
+              }}
+            />
+          </div>
+
           {/* ------------------------------------------------ 三栏 */}
-          <main style={{ position: 'absolute', inset: 0, zIndex: 4 }}>
+          {/* 场景叠化：整层淡出 → 换版面 → 淡入。
+              逐组件滑过去看着更「高级」，但地图瓦片是按最终尺寸算好的，
+              容器在过渡中被拉伸就会露出没铺满的边；一次干净的叠化更稳。 */}
+          <SceneProvider value={{ index: shown, scene, visible: visibleWidgets }}>
+          <main
+            style={{ position: 'absolute', inset: 0, zIndex: 4 }}
+            className={phase === 'out' ? 'bp-stage-out' : 'bp-stage-in'}
+          >
             {/* 左栏 */}
             {/* 三栏只是语义分组：display:contents 让面板成为 main 的直接子元素，各自带坐标 */}
             <div style={{ display: 'contents' }}>
                             <Widget
                 id="situation"
-                rect={layout.rects.situation}
+                rect={rects.situation}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -574,7 +784,7 @@ export default function BoardPage() {
 
                             <Widget
                 id="pie"
-                rect={layout.rects.pie}
+                rect={rects.pie}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -608,7 +818,7 @@ export default function BoardPage() {
 
                             <Widget
                 id="density"
-                rect={layout.rects.density}
+                rect={rects.density}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -682,7 +892,7 @@ export default function BoardPage() {
 
                             <Widget
                 id="alerts"
-                rect={layout.rects.alerts}
+                rect={rects.alerts}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -843,7 +1053,7 @@ export default function BoardPage() {
             <div style={{ display: 'contents' }}>
               <Widget
                 id="map"
-                rect={layout.rects.map}
+                rect={rects.map}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -863,8 +1073,8 @@ export default function BoardPage() {
                       activeId={cur?.site.id}
                       center={[Number(curSite?.lon ?? 121.2445), Number(curSite?.lat ?? 28.6455)]}
                       zoom={13}
-                      width={layout.rects.map.w - 16}
-                      height={layout.rects.map.h - 78}
+                      width={rects.map.w - 16}
+                      height={rects.map.h - 78}
                     />
                     </div>
                     {/* 地图从背景降成组件后必须自带图例 ——
@@ -901,7 +1111,7 @@ export default function BoardPage() {
               {/* ---------- 分时雨量：过去 12h 逐小时雨量柱 + 未来 12h 预测雨量虚线 ---------- */}
               <Widget
                 id="rain"
-                rect={layout.rects.rain}
+                rect={rects.rain}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -961,7 +1171,7 @@ export default function BoardPage() {
               {/* ---------- 累计雨量：本次过程累计曲线（调度看的是累计量） ---------- */}
               <Widget
                 id="cumul"
-                rect={layout.rects.cumul}
+                rect={rects.cumul}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -1018,7 +1228,7 @@ export default function BoardPage() {
               {/* ---------- 预测离散度：四个预见期的 90% 区间宽度 ---------- */}
               <Widget
                 id="spread"
-                rect={layout.rects.spread}
+                rect={rects.spread}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -1077,7 +1287,7 @@ export default function BoardPage() {
               {/* ---------- 站点排行：多角度统计（按积水深 / 超阈时长 / 涨速） ---------- */}
               <Widget
                 id="rank"
-                rect={layout.rects.rank}
+                rect={rects.rank}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -1130,7 +1340,7 @@ export default function BoardPage() {
               {/* ---------- 超阈时长：十站横条，回答「谁泡得最久」 ---------- */}
               <Widget
                 id="duration"
-                rect={layout.rects.duration}
+                rect={rects.duration}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -1193,7 +1403,7 @@ export default function BoardPage() {
               {/* ---------- 告警生命周期：一轮预警从起到落用了多久 ---------- */}
               <Widget
                 id="lifecycle"
-                rect={layout.rects.lifecycle}
+                rect={rects.lifecycle}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -1305,7 +1515,7 @@ export default function BoardPage() {
 
               <Widget
                 id="health"
-                rect={layout.rects.health}
+                rect={rects.health}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -1361,7 +1571,7 @@ export default function BoardPage() {
               {/* ---------- 预报全景：十站 12h 预测曲线叠一张图 ---------- */}
               <Widget
                 id="panorama"
-                rect={layout.rects.panorama}
+                rect={rects.panorama}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -1409,7 +1619,7 @@ export default function BoardPage() {
               {/* ---------- 降雨-积水响应：雨峰与水峰的滞后 ---------- */}
               <Widget
                 id="response"
-                rect={layout.rects.response}
+                rect={rects.response}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -1536,7 +1746,7 @@ export default function BoardPage() {
               {/* ---------- 告警趋势：24h 每小时新增 vs 解除 ---------- */}
               <Widget
                 id="alerttrend"
-                rect={layout.rects.alerttrend}
+                rect={rects.alerttrend}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -1624,7 +1834,7 @@ export default function BoardPage() {
             <div style={{ display: 'contents' }}>
                             <Widget
                 id="trend"
-                rect={layout.rects.trend}
+                rect={rects.trend}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -1652,7 +1862,7 @@ export default function BoardPage() {
 
                             <Widget
                 id="horizon"
-                rect={layout.rects.horizon}
+                rect={rects.horizon}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -1761,7 +1971,7 @@ export default function BoardPage() {
 
                             <Widget
                 id="judge"
-                rect={layout.rects.judge}
+                rect={rects.judge}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -1833,7 +2043,7 @@ export default function BoardPage() {
             <div style={{ display: 'contents' }}>
                             <Widget
                 id="station"
-                rect={layout.rects.station}
+                rect={rects.station}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -1862,7 +2072,7 @@ export default function BoardPage() {
 
                             <Widget
                 id="compare"
-                rect={layout.rects.compare}
+                rect={rects.compare}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -1910,7 +2120,7 @@ export default function BoardPage() {
 
                             <Widget
                 id="forecast"
-                rect={layout.rects.forecast}
+                rect={rects.forecast}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -1945,7 +2155,7 @@ export default function BoardPage() {
 
                             <Widget
                 id="decision"
-                rect={layout.rects.decision}
+                rect={rects.decision}
                 scale={scale}
                 editing={editing}
                 p={p}
@@ -1978,6 +2188,7 @@ export default function BoardPage() {
               </Widget>
             </div>
           </main>
+          </SceneProvider>
 
           
         </div>
