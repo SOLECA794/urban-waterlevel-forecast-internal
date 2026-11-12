@@ -17,10 +17,11 @@ import {
 } from '../domain'
 import {
   useAlerts,
-  useDecisions,
-  useEvalPairs,
+  useAudit,
+  useDeliveries,
+  useHealth,
   useForecast,
-  useMetrics,
+  useModelVersions,
   useOverview,
   useSiteDetail,
   useSites,
@@ -45,8 +46,10 @@ import {
   type WidgetId,
 } from './layout'
 import { SCENES, SceneProvider } from './scene'
+import { UNKNOWN_ENGINE, type SystemHealth } from '../domain'
 import { useSceneRotation } from './useRotation'
-import { DecisionStrip, DistrictStats, ResidualScatter, SkillMatrix } from './AnalysisPanels'
+import { DistrictBoard } from './DistrictBoard'
+import { AuditFeed, DeliveryPanel, LatencyPanel, QualityPanel, VersionTrack } from './PlatformPanels'
 
 /**
  * 大厅大屏 —— 三屏轮播，无人交互。
@@ -81,6 +84,16 @@ const SIGNAL_LABEL: Record<string, string> = {
   quality: '数据质量',
   thr_blue: '蓝阈',
   headroom_blue: '距蓝阈',
+}
+
+/** 健康接口拿不到时的兜底：显示「掉线」，而不是把空白当成正常。 */
+const OFFLINE_HEALTH: SystemHealth = {
+  apiOk: false,
+  service: '—',
+  engineOk: false,
+  engine: UNKNOWN_ENGINE,
+  clients: 0,
+  now: 0 as SimTime,
 }
 
 const STATION_MS = 9000
@@ -291,10 +304,7 @@ export default function BoardPage() {
     [scene.widgets],
   )
 
-  // 「地图分区」屏要把观测点换成辖区统计：那屏的问题是「几个街道先顾哪个」，
-  // 单站详情只有四个数、撑不满版面也答不上那个问题。
   const sceneKey = scene.key
-  const showDistricts = scene.key === 'map'
 
   // 「此刻态势」有四层内容（两大数 / 最深处与距阈 / 退涨指示 / 底部两大数），
   // 实测需要 142px。地图分区屏为了把高度让给地图，只给它 120px，
@@ -323,11 +333,11 @@ export default function BoardPage() {
     return () => window.removeEventListener('resize', apply)
   }, [])
 
-  // 三个「分析类」面板的数据源。它们只在「图表分析」屏出现，
-  // 但 hook 必须在顶层无条件调用（React 规则），场景切换不改变调用顺序。
-  const metrics = useMetrics(6)
-  const evalPairs = useEvalPairs(12)
-  const decisionRows = useDecisions(60)
+  // 「平台运行」屏的数据源：全部是运行记录而不是监测值。
+  const health = useHealth()
+  const audit = useAudit(24)
+  const deliveries = useDeliveries(60)
+  const versions = useModelVersions()
 
   const overview = useOverview()
   const forecast = useForecast()
@@ -2144,26 +2154,11 @@ export default function BoardPage() {
               >
                 <Panel
                   key={`site-${cur?.site.id ?? 'none'}-${sceneKey}`}
-                  title={showDistricts ? '辖区统计' : '观测点'}
-                  sub={showDistricts ? '按街道聚合 · 深取最深、速取均值' : (curSite?.district ?? '')}
+                  title="观测点"
+                  sub={curSite?.district ?? ''}
                   accent={p.level[asm?.level ?? 'none']}
                   className="bp-fade"
                 >
-                {showDistricts ? (
-                  <DistrictStats
-                    rows={list.map((r) => ({
-                      siteId: r.site.id,
-                      name: r.site.name,
-                      district: r.site.district ?? '未分区',
-                      level: r.assessment.level,
-                      depth: Number(r.reading.depth),
-                      slope: Number(r.reading.trend1h),
-                      rain: Number(r.reading.rain),
-                    }))}
-                    p={p}
-                    levelLabel={LEVEL_LABEL}
-                  />
-                ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, height: '100%' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <b style={{ fontSize: 19, letterSpacing: 0.4 }}>{curSite?.name ?? '—'}</b>
@@ -2180,8 +2175,51 @@ export default function BoardPage() {
                     <Row label="不透水率" value={curSite?.drainage ? `${Math.round(Number(curSite.drainage.impervious) * 100)}%` : '—'} p={p} />
                   </div>
                 </div>
-                )}
               </Panel>
+              </Widget>
+
+              {/* ---------- 辖区看板：地图分区屏的主角 ---------- */}
+              <Widget
+                id="districts"
+                rect={rects.districts}
+                scale={scale}
+                editing={editing}
+                p={p}
+                onChange={setRect}
+                onCommit={() => saveLayout(layoutRef.current)}
+              >
+                <Panel
+                  title="辖区看板"
+                  sub={`${new Set(list.map((r) => r.site.district ?? '未分区')).size} 个辖区 · 此刻积水 / 12h 峰值 / 雨情 / 最紧张站`}
+                  accent={p.level[worst]}
+                >
+                  <DistrictBoard
+                    rows={list.map((r) => {
+                      // 12h 峰值取 forecast 里各预见期的最大水位，而不是
+                      // assessment.peakValue —— 后者是「超阈事件的峰值」，
+                      // 超阈事件还没结束时就等于当前值，会被读成「不会再涨」。
+                      const sf = forecast.data?.sites[r.site.id]
+                      const peakH = sf
+                        ? sf.horizons.reduce<{ level: number; atMin: number } | null>((a, x) => {
+                            const lv = Number(x.level)
+                            return !a || lv > a.level ? { level: lv, atMin: x.horizonMin } : a
+                          }, null)
+                        : null
+                      return {
+                        siteId: r.site.id,
+                        name: r.site.name,
+                        district: r.site.district ?? '未分区',
+                        level: r.assessment.level,
+                        depth: Number(r.reading.depth),
+                        slope: Number(r.reading.trend1h),
+                        rain: Number(r.reading.rain),
+                        peakLevel: peakH?.level ?? null,
+                        peakAtMin: peakH?.atMin ?? null,
+                      }
+                    })}
+                    p={p}
+                  />
+                </Panel>
               </Widget>
 
                             <Widget
@@ -2267,64 +2305,102 @@ export default function BoardPage() {
               </Panel>
               </Widget>
 
-              {/* ---------- 预测偏差分布：模型是偏高还是偏低 ---------- */}
+              {/* ---------- 数据质量监测 ---------- */}
               <Widget
-                id="residual"
-                rect={rects.residual}
+                id="quality"
+                rect={rects.quality}
                 scale={scale}
                 editing={editing}
                 p={p}
                 onChange={setRect}
                 onCommit={() => saveLayout(layoutRef.current)}
               >
-                <Panel
-                  title="预测偏差分布"
-                  sub="横轴预见期 · 纵轴「预测 − 实测」 · 零线为无偏"
-                  accent={p.forecast}
-                >
-                  <ResidualScatter pairs={evalPairs.data ?? []} p={p} />
+                <Panel title="数据质量监测" sub="上报新鲜度 · 引擎心跳 · 站点状态" accent={p.level.blue}>
+                  <QualityPanel
+                    rows={list.map((r) => ({
+                      siteId: r.site.id,
+                      name: r.site.name,
+                      district: r.site.district ?? '未分区',
+                      level: r.assessment.level,
+                      staleSec: Math.max(0, Number(anchor) - Number(r.reading.updatedAt ?? anchor)),
+                      quality: r.reading.quality.state,
+                    }))}
+                    health={health.data ?? OFFLINE_HEALTH}
+                    p={p}
+                  />
                 </Panel>
               </Widget>
 
-              {/* ---------- 模型精度矩阵：哪个模型在哪个预见期能信 ---------- */}
+              {/* ---------- 告警响应时延 ---------- */}
               <Widget
-                id="skillmatrix"
-                rect={rects.skillmatrix}
+                id="latency"
+                rect={rects.latency}
                 scale={scale}
                 editing={editing}
                 p={p}
                 onChange={setRect}
                 onCommit={() => saveLayout(layoutRef.current)}
               >
-                <Panel
-                  title="模型精度矩阵"
-                  sub={metrics.data ? `${metrics.data.latest.version} · skill 对持久化基线` : 'skill 对持久化基线'}
-                  accent={p.accent2}
-                >
-                  {metrics.data ? (
-                    <SkillMatrix metrics={metrics.data} p={p} />
-                  ) : (
-                    <div style={{ fontSize: 11, color: p.textFaint }}>等待离线指标</div>
-                  )}
+                <Panel title="告警响应时延" sub="从响起到确认到结案 · 分档直方图" accent={p.level.orange}>
+                  <LatencyPanel
+                    rows={(alerts.data ?? []).map((e) => ({
+                      raisedAt: Number(e.raisedAt),
+                      ackedAt: e.ackedAt == null ? null : Number(e.ackedAt),
+                      clearedAt: e.clearedAt == null ? null : Number(e.clearedAt),
+                      level: e.level,
+                      disposition: String(e.disposition),
+                    }))}
+                    p={p}
+                  />
                 </Panel>
               </Widget>
 
-              {/* ---------- 研判决策时序：引擎什么时候主动加算 ---------- */}
+              {/* ---------- 通知投递 ---------- */}
               <Widget
-                id="decisions"
-                rect={rects.decisions}
+                id="delivery"
+                rect={rects.delivery}
                 scale={scale}
                 editing={editing}
                 p={p}
                 onChange={setRect}
                 onCommit={() => saveLayout(layoutRef.current)}
               >
-                <Panel
-                  title="研判决策时序"
-                  sub="每格一轮研判 · 蓝＝主动加算 · 灰＝静默跳过"
-                  accent={p.accent}
-                >
-                  <DecisionStrip rows={decisionRows.data ?? []} p={p} />
+                <Panel title="通知投递" sub="按渠道拆成功与失败 · 发了没送到最难发现" accent={p.accent2}>
+                  <DeliveryPanel rows={deliveries.data ?? []} p={p} />
+                </Panel>
+              </Widget>
+
+              {/* ---------- 操作审计 ---------- */}
+              <Widget
+                id="auditfeed"
+                rect={rects.auditfeed}
+                scale={scale}
+                editing={editing}
+                p={p}
+                onChange={setRect}
+                onCommit={() => saveLayout(layoutRef.current)}
+              >
+                <Panel title="操作审计" sub="近 24 小时写操作 · 谁在动配置" accent={p.accent}>
+                  <AuditFeed rows={audit.data ?? []} p={p} />
+                </Panel>
+              </Widget>
+
+              {/* ---------- 模型版本轨迹 ---------- */}
+              <Widget
+                id="versions"
+                rect={rects.versions}
+                scale={scale}
+                editing={editing}
+                p={p}
+                onChange={setRect}
+                onCommit={() => saveLayout(layoutRef.current)}
+              >
+                <Panel title="模型版本轨迹" sub="每次换版的 3h skill · 换完是不是真的更好" accent={p.forecast}>
+                  <VersionTrack
+                    versions={versions.data?.versions ?? []}
+                    active={versions.data?.active ?? '—'}
+                    p={p}
+                  />
                 </Panel>
               </Widget>
 

@@ -43,6 +43,12 @@ export type WidgetId =
   | 'residual'
   | 'skillmatrix'
   | 'decisions'
+  | 'districts'
+  | 'quality'
+  | 'latency'
+  | 'delivery'
+  | 'auditfeed'
+  | 'versions'
 
 export const WIDGET_IDS: readonly WidgetId[] = [
   'situation',
@@ -70,6 +76,12 @@ export const WIDGET_IDS: readonly WidgetId[] = [
   'residual',
   'skillmatrix',
   'decisions',
+  'districts',
+  'quality',
+  'latency',
+  'delivery',
+  'auditfeed',
+  'versions',
 ]
 
 export const WIDGET_TITLE: Record<WidgetId, string> = {
@@ -98,6 +110,12 @@ export const WIDGET_TITLE: Record<WidgetId, string> = {
   residual: '预测偏差分布',
   skillmatrix: '模型精度矩阵',
   decisions: '研判决策时序',
+  districts: '辖区看板',
+  quality: '数据质量监测',
+  latency: '告警响应时延',
+  delivery: '通知投递',
+  auditfeed: '操作审计',
+  versions: '模型版本轨迹',
 }
 
 export interface Rect {
@@ -149,6 +167,12 @@ const BALANCED: Record<WidgetId, Rect> = {
   residual: R(12, 1068, 292, 0),
   skillmatrix: R(316, 1068, 606, 0),
   decisions: R(934, 1068, 329, 0),
+  districts: R(0, 0, 0, 0),
+  quality: R(0, 0, 0, 0),
+  latency: R(0, 0, 0, 0),
+  delivery: R(0, 0, 0, 0),
+  auditfeed: R(0, 0, 0, 0),
+  versions: R(0, 0, 0, 0),
 }
 
 /** 地图优先：两侧收窄，中间留给底图。 */
@@ -179,6 +203,12 @@ const MAP_FIRST: Record<WidgetId, Rect> = {
   residual: R(12, 1068, 250, 0),
   skillmatrix: R(274, 1068, 760, 0),
   decisions: R(1046, 1068, 294, 0),
+  districts: R(0, 0, 0, 0),
+  quality: R(0, 0, 0, 0),
+  latency: R(0, 0, 0, 0),
+  delivery: R(0, 0, 0, 0),
+  auditfeed: R(0, 0, 0, 0),
+  versions: R(0, 0, 0, 0),
 }
 
 /** 信息优先：两侧加宽，底图退成背景。 */
@@ -209,6 +239,12 @@ const INFO_FIRST: Record<WidgetId, Rect> = {
   residual: R(12, 1068, 360, 0),
   skillmatrix: R(384, 1068, 560, 0),
   decisions: R(956, 1068, 284, 0),
+  districts: R(0, 0, 0, 0),
+  quality: R(0, 0, 0, 0),
+  latency: R(0, 0, 0, 0),
+  delivery: R(0, 0, 0, 0),
+  auditfeed: R(0, 0, 0, 0),
+  versions: R(0, 0, 0, 0),
 }
 
 export const PRESETS: Record<PresetName, Record<WidgetId, Rect>> = {
