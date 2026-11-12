@@ -265,6 +265,23 @@ export function ZoneCellView({ cell, domain, p }: {
 }
 
 /** 六格共用的纵轴范围：取所有曲线与阈值的并集，再留 8% 余量。 */
+/** 单格自己的值域。合计格用它，不跟着辖区的尺子走。 */
+export function ownDomain(cell: ZoneCell): [number, number] {
+  let lo = Infinity
+  let hi = -Infinity
+  for (const s of cell.series) {
+    for (const pt of s.points) {
+      lo = Math.min(lo, pt.level)
+      hi = Math.max(hi, pt.level)
+    }
+  }
+  hi = Math.max(hi, cell.thresholds.red)
+  lo = Math.min(lo, cell.thresholds.blue)
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return [0, 1]
+  const pad = Math.max((hi - lo) * 0.1, 0.05)
+  return [Math.max(0, lo - pad), hi + pad]
+}
+
 export function sharedDomain(cells: readonly ZoneCell[]): [number, number] {
   // 「全域合计」那一格画的是十个站相加（约 7~8m），和单个辖区的积水深
   // （0.5~1.5m）**不是同一个量**。把它算进共享域，会让另外五格的曲线

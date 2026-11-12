@@ -49,11 +49,15 @@
  },
  {
   "file": "shots/board-light-s1.png",
-  "bytes": 332843
+  "bytes": 295829
  },
  {
   "file": "shots/board-light-s2.png",
-  "bytes": 423741
+  "bytes": 426636
+ },
+ {
+  "file": "shots/board-light.png",
+  "bytes": 289767
  },
  {
   "file": "shots/prod-board-s0.png",
@@ -61,11 +65,11 @@
  },
  {
   "file": "shots/prod-board-s1.png",
-  "bytes": 332843
+  "bytes": 295829
  },
  {
   "file": "shots/prod-board-s2.png",
-  "bytes": 423741
+  "bytes": 426636
  },
  {
   "file": "shots/prod-board.png",

@@ -44,7 +44,7 @@ import {
 } from './layout'
 import { SCENES, SceneProvider } from './scene'
 import { useSceneRotation } from './useRotation'
-import { ZoneCellView, sharedDomain, type ZoneCell, type ZoneSeries } from './ZoneGrid'
+import { ZoneCellView, ownDomain, sharedDomain, type ZoneCell, type ZoneSeries } from './ZoneGrid'
 import {
   Confidence,
   DistrictCompare,
@@ -2513,7 +2513,17 @@ export default function BoardPage() {
                       accent={p.level[cell.topLevel]}
                       style={{ height: '100%' }}
                     >
-                      <ZoneCellView cell={cell} domain={zoneDomain} p={p} />
+                      {/*
+                        合计格不跟着辖区的尺子走：它画的是十站相加深（7~8m），
+                        与辖区积水深（0.5~1.5m）不是同一个量。早先让它共用 zoneDomain，
+                        结果曲线整体冲出上沿、看起来像一条贴顶的直线（读者会当成坏了）。
+                        现在它用自己的域，标题也明说是合计口径。
+                      */}
+                      <ZoneCellView
+                        cell={cell}
+                        domain={cell.district === '全域合计' ? ownDomain(cell) : zoneDomain}
+                        p={p}
+                      />
                     </Panel>
                   </Widget>
                 )
