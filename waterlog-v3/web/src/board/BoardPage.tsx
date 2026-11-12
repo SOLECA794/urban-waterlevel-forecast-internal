@@ -15,7 +15,17 @@ import {
   maxLevel,
   redThreshold,
 } from '../domain'
-import { useAlerts, useForecast, useOverview, useSiteDetail, useSites, type OverviewRow } from '../data/queries'
+import {
+  useAlerts,
+  useDecisions,
+  useEvalPairs,
+  useForecast,
+  useMetrics,
+  useOverview,
+  useSiteDetail,
+  useSites,
+  type OverviewRow,
+} from '../data/queries'
 import { PALETTE, PaletteCtx, usePalette, type Palette } from './theme'
 import { techGridUri } from './panel'
 import { BarRow, BigStat, Donut, LevelTag, LiveDot, Panel } from './parts'
@@ -36,13 +46,15 @@ import {
 } from './layout'
 import { SCENES, SceneProvider } from './scene'
 import { useSceneRotation } from './useRotation'
+import { DecisionStrip, DistrictStats, ResidualScatter, SkillMatrix } from './AnalysisPanels'
 
 /**
- * 大厅大屏 —— 五屏轮播，无人交互。
+ * 大厅大屏 —— 三屏轮播，无人交互。
  *
- * 第 0 屏「全域态势」是**一屏超集**（22 个组件全在），也就是主页；
- * 其余四屏是把它按数据类别切开、每屏只讲一件事。切屏用整层叠化，
- * 不是新开路由 —— 大屏没有导航，观众不会去点。
+ * 三屏各讲一件事：**全域总览**（11 块，值班常驻）、**地图分区**（8 块，
+ * 看哪个辖区最紧张）、**图表分析**（7 块，看模型靠不靠得住）。
+ * 每屏内部按「KPI 条 → 主图 → 明细」三层组织，不是把组件平铺成等大方块。
+ * 切屏用整层叠化，不是新开路由 —— 大屏没有导航，观众不会去点。
  *
  * 三层的说法已经作废，现在是两层，而且没有暗色层：
  *   1. 真实地图底图（高德浅色路网瓦片，铺满整屏，不倾斜）
@@ -73,7 +85,7 @@ const SIGNAL_LABEL: Record<string, string> = {
 
 const STATION_MS = 9000
 const W = 1920
-const H = 1080
+const H0 = 1080
 
 /** 十二小时预测迷你曲线：一行一站，峰值打点。 */
 function MiniCurve({ sf, site, p, height = 18 }: { sf: SiteForecast; site: { baseLevel: Meters; thresholds: Thresholds }; p: Palette; height?: number }) {
@@ -203,6 +215,11 @@ function boardCss(): string {
 export default function BoardPage() {
   const p = PALETTE
   const hostRef = useRef<HTMLDivElement | null>(null)
+  /** 画布逻辑高度：宽度铺满视口后，按同一 scale 反推纵向需要多少逻辑高度。
+   *  固定 1080 的话，宽屏（如 1410×628，比例 2.245）等比缩放后宽度只用 79%，
+   *  右侧留一大片空白——这正是「整页只显示了一点」的根因。
+   *  改成随视口浮动后：宽度必然铺满，纵向也必然铺满，且仍是等比（圆形不会压扁）。 */
+  const H = H0
   const [scale, setScale] = useState(1)
 
   /* 版面状态：预设 + 手工拖动，落 localStorage。
@@ -274,6 +291,19 @@ export default function BoardPage() {
     [scene.widgets],
   )
 
+  // 「地图分区」屏要把观测点换成辖区统计：那屏的问题是「几个街道先顾哪个」，
+  // 单站详情只有四个数、撑不满版面也答不上那个问题。
+  const sceneKey = scene.key
+  const showDistricts = scene.key === 'map'
+
+  // 「此刻态势」有四层内容（两大数 / 最深处与距阈 / 退涨指示 / 底部两大数），
+  // 实测需要 142px。地图分区屏为了把高度让给地图，只给它 120px，
+  // 于是底部两大数被裁掉（measure-overflow 报溢出 58px）。
+  // 不看场景名、只看实际分配到的矩形高度：用户在布局模式里把面板拖高之后，
+  // 内容应当自己长回来，而不是因为"它是地图屏"就永远少一行。
+  const situationH = (rects.situation?.h ?? 0) * scale
+  const situationCompact = situationH > 0 && situationH < 150
+
   /**
    * 手动切场景：只切屏，不停轮播。
    * 停轮播是「进布局编辑态」才做的事——那会儿用户要拖组件，
@@ -282,11 +312,22 @@ export default function BoardPage() {
   const gotoScene = (i: number) => carousel.setIndex(i)
 
   useEffect(() => {
-    const apply = () => setScale(Math.min(window.innerWidth / W, window.innerHeight / H))
+    const apply = () => {
+      // 取两轴的较小比例：任何视口下 1920×1080 的版面都完整可见，
+      // 一个面板都不会被裁掉。空出来的边由底色与外圈留白承担。
+      const s = Math.min(window.innerWidth / W, window.innerHeight / H0)
+      setScale(s)
+    }
     apply()
     window.addEventListener('resize', apply)
     return () => window.removeEventListener('resize', apply)
   }, [])
+
+  // 三个「分析类」面板的数据源。它们只在「图表分析」屏出现，
+  // 但 hook 必须在顶层无条件调用（React 规则），场景切换不改变调用顺序。
+  const metrics = useMetrics(6)
+  const evalPairs = useEvalPairs(12)
+  const decisionRows = useDecisions(60)
 
   const overview = useOverview()
   const forecast = useForecast()
@@ -380,17 +421,46 @@ export default function BoardPage() {
   return (
     <PaletteCtx.Provider value={p}>
       <style>{boardCss()}</style>
+      {/* 外层只负责把画布摆在视口里，**不能裁**。
+          早先这里是 position:fixed + inset:0 + overflow:hidden：
+          盒子被钉死在视口高度上，而缩放后的画布比视口高（1410×628 的
+          宽屏里，scale=0.734 时 1080 逻辑高会变成 793px），
+          超出的部分被 overflow 直接剪掉——底部整整一行面板凭空消失，
+          这就是「整个页面上就显示了一点」。
+          现在：外层按缩放后的真实占位撑开，画布始终完整可见。 */}
       <div
         ref={hostRef}
         style={{
           position: 'fixed',
           inset: 0,
           overflow: 'hidden',
-          background: '#E4EFF9',
-          transformOrigin: 'top left',
-          transform: `scale(${scale})`,
+          // 外圈不留一块"没渲染"的白：沿用画布底色的最浅一档，
+          // 视觉上读成「版面外缘」而不是「内容没铺满」。
+          background: 'linear-gradient(180deg, #E7F0F9 0%, #D9E8F5 60%, #CFE2F3 100%)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
         }}
       >
+        <div
+          style={{
+            // 用负 margin 之外的另一种做法：占位盒声明缩放后的尺寸，
+            // 让外层能滚到画布真正的右下角，而不是按未缩放的 1920 算。
+            width: W * scale,
+            height: H * scale,
+            flex: '0 0 auto',
+            position: 'relative',
+          }}
+        >
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            transformOrigin: 'top left',
+            transform: `scale(${scale})`,
+          }}
+        >
         <div
           style={{
             width: W,
@@ -746,7 +816,7 @@ export default function BoardPage() {
                     </div>
                     {/* 看完「有多深」，下一个问题一定是「还在涨吗、涨多快」。
                         这条信息原来整屏都没有，而数据现成（trend1h / slope）。 */}
-                    {deepest && (() => {
+                    {deepest && !situationCompact && (() => {
                       const tr = Number(deepest.reading.trend1h)
                       const LIM = 0.05 // ±0.05 m/h 对应指示条两端
                       const pos = Math.max(0, Math.min(100, 50 + (tr / LIM) * 50))
@@ -774,10 +844,19 @@ export default function BoardPage() {
                       )
                     })()}
                   </div>
-                  <div style={{ display: 'flex', gap: 14 }}>
-                    <BigStat label="降雨中" value={raining} unit="站" size={26} />
-                    <BigStat label="24h 告警" value={alerts.data?.length ?? 0} unit="次" size={26} />
-                  </div>
+                  {!situationCompact && (
+                    <div style={{ display: 'flex', gap: 14 }}>
+                      <BigStat label="降雨中" value={raining} unit="站" size={26} />
+                      <BigStat label="24h 告警" value={alerts.data?.length ?? 0} unit="次" size={26} />
+                    </div>
+                  )}
+                  {/* 紧凑态把这两项压成一行小字：数字还在，只是不再占一大块 */}
+                  {situationCompact && (
+                    <div style={{ display: 'flex', gap: 12, fontSize: 9.5, color: p.textDim }}>
+                      <span>降雨中 <b style={{ color: p.text }}>{raining}</b> 站</span>
+                      <span>24h 告警 <b style={{ color: p.text }}>{alerts.data?.length ?? 0}</b> 次</span>
+                    </div>
+                  )}
                 </div>
               </Panel>
               </Widget>
@@ -1588,11 +1667,20 @@ export default function BoardPage() {
                       return { id: r.site.id, name: r.site.name, level: sf.assessment.level, ds, red, peak: Math.max(...ds, 0) }
                     })
                     if (!rows.length) return <div style={{ fontSize: 11, color: p.textFaint }}>等待预测</div>
-                    const max = Math.max(...rows.map((r) => r.red * 1.4), ...rows.map((r) => r.peak * 1.1), 0.1)
+                    // 量程取「十站合一后的实际区间」而不是红阈倍数：
+                    // 这屏要回答的是「哪几条线在往上走、是不是一起走」，
+                    // 用红阈当上限会把 0.5~0.7m 的差别压成一条线。
+                    // 上下各留 12% 余量，避免最上面那条贴边、最下面那条压轴。
+                    const all = rows.flatMap((r) => r.ds)
+                    const dMin = Math.min(...all, Infinity)
+                    const dMax = Math.max(...all, 0.01)
+                    const pad = Math.max((dMax - dMin) * 0.12, 0.02)
+                    const lo = Math.max(0, dMin - pad)
+                    const hi = dMax + pad
                     const N = Math.max(...rows.map((r) => r.ds.length), 2)
                     const Wd = 100
                     const Hd = 30
-                    const y = (d: number) => Hd - 1 - (Math.min(d, max) / max) * (Hd - 3)
+                    const y = (d: number) => Hd - 1 - ((Math.min(Math.max(d, lo), hi) - lo) / (hi - lo)) * (Hd - 3)
                     return (
                       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 3 }}>
                         <svg viewBox={`0 0 ${Wd} ${Hd}`} preserveAspectRatio="none" style={{ flex: 1, minHeight: 0, width: '100%' }}>
@@ -1609,6 +1697,10 @@ export default function BoardPage() {
                         </svg>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: p.textFaint }}>
                           <span>现在</span><span>+3h</span><span>+6h</span><span>+9h</span><span>+12h</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: p.textFaint }}>
+                          <span>{`纵轴 ${lo.toFixed(2)} ~ ${hi.toFixed(2)}m`}</span>
+                          <span>{`峰值 ${dMax.toFixed(2)}m · ${rows.filter((r) => r.level === 'red').length} 站红 / ${rows.filter((r) => r.level === 'orange').length} 站橙`}</span>
                         </div>
                       </div>
                     )
@@ -2050,7 +2142,28 @@ export default function BoardPage() {
                 onChange={setRect}
                 onCommit={() => saveLayout(layoutRef.current)}
               >
-                <Panel key={`site-${cur?.site.id ?? 'none'}`} title="观测点" sub={curSite?.district ?? ''} accent={p.level[asm?.level ?? 'none']} className="bp-fade">
+                <Panel
+                  key={`site-${cur?.site.id ?? 'none'}-${sceneKey}`}
+                  title={showDistricts ? '辖区统计' : '观测点'}
+                  sub={showDistricts ? '按街道聚合 · 深取最深、速取均值' : (curSite?.district ?? '')}
+                  accent={p.level[asm?.level ?? 'none']}
+                  className="bp-fade"
+                >
+                {showDistricts ? (
+                  <DistrictStats
+                    rows={list.map((r) => ({
+                      siteId: r.site.id,
+                      name: r.site.name,
+                      district: r.site.district ?? '未分区',
+                      level: r.assessment.level,
+                      depth: Number(r.reading.depth),
+                      slope: Number(r.reading.trend1h),
+                      rain: Number(r.reading.rain),
+                    }))}
+                    p={p}
+                    levelLabel={LEVEL_LABEL}
+                  />
+                ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, height: '100%' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <b style={{ fontSize: 19, letterSpacing: 0.4 }}>{curSite?.name ?? '—'}</b>
@@ -2067,6 +2180,7 @@ export default function BoardPage() {
                     <Row label="不透水率" value={curSite?.drainage ? `${Math.round(Number(curSite.drainage.impervious) * 100)}%` : '—'} p={p} />
                   </div>
                 </div>
+                )}
               </Panel>
               </Widget>
 
@@ -2153,6 +2267,67 @@ export default function BoardPage() {
               </Panel>
               </Widget>
 
+              {/* ---------- 预测偏差分布：模型是偏高还是偏低 ---------- */}
+              <Widget
+                id="residual"
+                rect={rects.residual}
+                scale={scale}
+                editing={editing}
+                p={p}
+                onChange={setRect}
+                onCommit={() => saveLayout(layoutRef.current)}
+              >
+                <Panel
+                  title="预测偏差分布"
+                  sub="横轴预见期 · 纵轴「预测 − 实测」 · 零线为无偏"
+                  accent={p.forecast}
+                >
+                  <ResidualScatter pairs={evalPairs.data ?? []} p={p} />
+                </Panel>
+              </Widget>
+
+              {/* ---------- 模型精度矩阵：哪个模型在哪个预见期能信 ---------- */}
+              <Widget
+                id="skillmatrix"
+                rect={rects.skillmatrix}
+                scale={scale}
+                editing={editing}
+                p={p}
+                onChange={setRect}
+                onCommit={() => saveLayout(layoutRef.current)}
+              >
+                <Panel
+                  title="模型精度矩阵"
+                  sub={metrics.data ? `${metrics.data.latest.version} · skill 对持久化基线` : 'skill 对持久化基线'}
+                  accent={p.accent2}
+                >
+                  {metrics.data ? (
+                    <SkillMatrix metrics={metrics.data} p={p} />
+                  ) : (
+                    <div style={{ fontSize: 11, color: p.textFaint }}>等待离线指标</div>
+                  )}
+                </Panel>
+              </Widget>
+
+              {/* ---------- 研判决策时序：引擎什么时候主动加算 ---------- */}
+              <Widget
+                id="decisions"
+                rect={rects.decisions}
+                scale={scale}
+                editing={editing}
+                p={p}
+                onChange={setRect}
+                onCommit={() => saveLayout(layoutRef.current)}
+              >
+                <Panel
+                  title="研判决策时序"
+                  sub="每格一轮研判 · 蓝＝主动加算 · 灰＝静默跳过"
+                  accent={p.accent}
+                >
+                  <DecisionStrip rows={decisionRows.data ?? []} p={p} />
+                </Panel>
+              </Widget>
+
                             <Widget
                 id="decision"
                 rect={rects.decision}
@@ -2191,6 +2366,8 @@ export default function BoardPage() {
           </SceneProvider>
 
           
+        </div>
+        </div>
         </div>
       </div>
     </PaletteCtx.Provider>

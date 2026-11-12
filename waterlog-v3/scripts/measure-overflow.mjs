@@ -79,12 +79,21 @@ await cdp.send('Page.enable', {}, sessionId)
 await cdp.send('Network.enable', {}, sessionId)
 await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false }, sessionId)
 for (const c of cookie) await cdp.send('Network.setCookie', { ...c, domain: '127.0.0.1', path: '/' }, sessionId)
-await cdp.send('Page.navigate', { url: `${BASE}/board?theme=light&scene=0` }, sessionId)
+const SCENE = process.argv.find((a) => a.startsWith('--scene='))?.slice(8) ?? '0'
+await cdp.send('Page.navigate', { url: `${BASE}/board?theme=light&scene=${SCENE}` }, sessionId)
+console.log(`-- 场景 ${SCENE} --`)
 await sleep(5200)
 
 const expr = `(() => {
   const out = []
   document.querySelectorAll('main section').forEach((el) => {
+    // 跳过不可见块：Widget 对"不在当前场景"的组件只淡出、不卸载，
+    // 它会以预设里的备用坐标（h=0）留在 DOM 里。若照量，
+    // 每屏都会多出三行「溢出 25/80/45px」的假阳性，把真溢出淹掉。
+    const cs = getComputedStyle(el)
+    if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) < 0.05) return
+    const r0 = el.getBoundingClientRect()
+    if (r0.height < 8) return
     const title = el.getAttribute('data-t') || (el.textContent || '').trim().slice(0, 10)
     const body = el.lastElementChild
     const r = el.getBoundingClientRect()
