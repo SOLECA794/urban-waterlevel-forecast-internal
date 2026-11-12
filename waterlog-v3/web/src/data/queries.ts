@@ -40,6 +40,7 @@ export const qk = {
   sites: ['sites'] as const,
   site: (id: string) => ['site', id] as const,
   history: (id: string, hours: number) => ['history', id, hours] as const,
+  allHistory: (hours: number) => ['all-history', hours] as const,
   forecast: ['forecast'] as const,
   alerts: (activeOnly: boolean) => ['alerts', activeOnly] as const,
   alert: (id: number) => ['alert', id] as const,
@@ -121,6 +122,24 @@ export function useHistory(id: string, hours = 12) {
     },
     refetchInterval: 60_000,
     enabled: !!id,
+  })
+}
+
+/**
+ * 所有站的历史序列，一次取回。
+ *
+ * 存在的理由是成本：大屏热力图要画十站过去 6 小时，逐站调 `useHistory`
+ * 就是十次请求，而且 24 秒轮一轮播就重拉一遍。批量接口把它压成一次。
+ */
+export function useAllHistory(hours = 12) {
+  return useQuery({
+    queryKey: qk.allHistory(hours),
+    queryFn: (): Promise<Record<string, SiteSeries>> => transport.allHistory(hours).then((d) =>
+      Object.fromEntries(
+        Object.entries(d.sites ?? {}).map(([id, pts]) => [id, A.adaptSeries(pts, id, hours)]),
+      ),
+    ),
+    refetchInterval: 30_000,
   })
 }
 

@@ -71,6 +71,21 @@ func (s *Server) siteHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"site_id": id, "hours": hours, "points": pts})
 }
 
+// allHistory 一次返回所有站在最近 N 小时的历史序列，按 site_id 分组。
+// 大屏的热力图与全域趋势都要十站历史，逐站十次请求在轮播屏上代价太高。
+func (s *Server) allHistory(w http.ResponseWriter, r *http.Request) {
+	hours, _ := strconv.Atoi(r.URL.Query().Get("hours"))
+	if hours <= 0 || hours > 48 {
+		hours = 24
+	}
+	m, err := s.svc.SeriesAll(hours)
+	if err != nil {
+		failErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"hours": hours, "sites": m})
+}
+
 func (s *Server) getForecast(w http.ResponseWriter, r *http.Request) {
 	fc := s.svc.Forecast()
 	if fc == nil {

@@ -1,0 +1,22 @@
+[Unit]
+Description=Waterlog Forecast Backend
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/waterlog
+Environment=ADDR=:8099
+Environment=DB_PATH=/opt/waterlog/app.db
+Environment=DEMO_MODE=true
+Environment=FORECAST_SCHEDULE_MIN=5
+Environment=OPENMETEO_ENABLED=true
+Environment=CORS_ORIGINS=http://114.55.31.135:8100
+ExecStart=/opt/waterlog/waterlog-server
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/opt/waterlog/server.log
+StandardError=append:/opt/waterlog/server.log
+
+[Install]
+WantedBy=multi-user.target

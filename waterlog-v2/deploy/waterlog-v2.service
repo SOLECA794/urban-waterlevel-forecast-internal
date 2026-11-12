@@ -1,0 +1,23 @@
+[Unit]
+Description=WaterLog v2 (city waterlogging monitoring, Go single binary)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/waterlog/v2
+ExecStart=/opt/waterlog/v2/waterlog-v2
+Environment=ADDR=:8111
+Environment=DB_PATH=/opt/waterlog/v2/data/v2.db
+Environment=DEMO_MODE=true
+Environment=SIM_INTERVAL_SEC=5
+Environment=RETENTION_HOURS=72
+# 重复触发冷却：防抖窗口。持续时长窗口(duration_sec)已承担主要防抖，
+# 此处仅避免水位在阈值附近抖动时反复告警；演示环境取 60s 以便快速复现。
+Environment=ALARM_COOLDOWN_SEC=60
+Environment=CORS_ORIGINS=http://114.55.31.135:8102,http://localhost:8102
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

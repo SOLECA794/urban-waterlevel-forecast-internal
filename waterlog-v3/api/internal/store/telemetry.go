@@ -54,6 +54,32 @@ func (s *Store) Series(siteID string, since int64) ([]domain.SeriesPoint, error)
 	return out, rows.Err()
 }
 
+// SeriesAll 一次取所有站点在 since 之后的历史序列，按站点分组。
+//
+// 为什么要有批量版本：大屏的「全域水位演进」热力图和「全域趋势研判」都要
+// 十个站的历史，逐站请求是十次往返、且每 24 秒轮播一次屏就重拉一轮。
+// 一次全查再在内存里分组，往返从 10 次降到 1 次。
+func (s *Store) SeriesAll(since int64) (map[string][]domain.SeriesPoint, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	rows, err := s.db.Query(
+		`SELECT site_id, ts, level, rain FROM telemetry WHERE ts>=? ORDER BY site_id, ts ASC`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]domain.SeriesPoint{}
+	for rows.Next() {
+		var siteID string
+		var p domain.SeriesPoint
+		if err := rows.Scan(&siteID, &p.TS, &p.Level, &p.Rain); err != nil {
+			return nil, err
+		}
+		out[siteID] = append(out[siteID], p)
+	}
+	return out, rows.Err()
+}
+
 // Latest 取每站点最新一条遥测。
 func (s *Store) Latest() (map[string]domain.TelemetryRow, error) {
 	s.mu.RLock()

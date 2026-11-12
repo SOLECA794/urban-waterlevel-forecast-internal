@@ -1,0 +1,124 @@
+/* 全局样式 + Tailwind 指令 + MapLibre 必需样式
+   设计契约见 docs/02-design/DESIGN-前端视觉系统.md */
+@import 'maplibre-gl/dist/maplibre-gl.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* ---- 设计令牌（色彩角色见契约 §2）---- */
+  --bg-canvas: #F5F7FA;
+  --bg-surface: #FFFFFF;
+  --bg-hover: #F1F5F9;
+  --border-1: #E2E8F0;
+  --border-2: #EEF2F6;
+  --text-1: #0F172A;
+  --text-2: #475569;
+  --text-3: #94A3B8;
+  --primary: #2563EB;
+  --accent-ai: #0E7490;
+  --success: #16A34A;
+  --warning: #D97706;
+  --danger: #DC2626;
+  --neutral: #64748B;
+
+  font-family: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  background: var(--bg-canvas);
+  color: var(--text-1);
+}
+
+* { box-sizing: border-box; }
+
+/* 数字统一等宽对齐（水位/时间/百分比） */
+.num, .ant-statistic-content, .font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 键盘可达性：统一焦点环 */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.18); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(15, 23, 42, 0.32); }
+
+/* Ant Design 细节对齐契约 */
+.ant-card { border-color: var(--border-1); }
+.ant-card-head { border-bottom-color: var(--border-2); min-height: 40px; }
+.ant-card-head-title { font-size: 14px; font-weight: 600; }
+.ant-table-thead > tr > th {
+  background: var(--bg-hover);
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+/* MapLibre 地图容器：加载中不出现白板 */
+.maplibregl-canvas { outline: none; }
+.maplibregl-popup-content {
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.map-loading-placeholder {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: #E8EDF3;
+  color: var(--text-3);
+  font-size: 12px;
+  z-index: 5;
+}
+
+/* ant-row 换行 */
+.ant-row { flex-wrap: wrap; }
+
+/* 观感升级：页面进场微动画 + 卡片轻投影 */
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.page-anim { animation: pageIn 0.28s ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .page-anim { animation: none; }
+}
+.kpi-card { transition: box-shadow 0.2s ease, transform 0.2s ease; }
+.kpi-card:hover {
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+/* ---- 深色大屏模式（辅助谱系，仅反转表面，语义色不变）---- */
+.dashboard-mode {
+  background: #0B1120 !important;
+  color: #E2E8F0;
+}
+.dashboard-mode .ant-card {
+  background: #131C2E;
+  border-color: #1E2A40;
+  color: #E2E8F0;
+}
+.dashboard-mode .ant-card-head { color: #94A3B8; border-bottom-color: #1E2A40; }
+.dashboard-mode h2,
+.dashboard-mode .ant-statistic-title,
+.dashboard-mode .ant-statistic-content { color: #E2E8F0 !important; }
+
+/* ---- 响应式：<768px 收紧页面留白、状态条降噪 ---- */
+@media (max-width: 767px) {
+  .page-pad { padding: 12px !important; }
+  .statusbar-secondary { display: none !important; }
+  .stat-grid-4, .stat-grid-4 .ant-col { flex: 0 0 50% !important; max-width: 50% !important; }
+}

@@ -215,6 +215,11 @@ func (s *Service) SiteHistory(id string, hours int) ([]domain.SeriesPoint, error
 	return s.store.Series(id, s.store.NowTS()-int64(hours*3600))
 }
 
+// SeriesAll 返回所有站在最近 hours 小时内的历史序列，按站点分组。
+func (s *Service) SeriesAll(hours int) (map[string][]domain.SeriesPoint, error) {
+	return s.store.SeriesAll(s.store.NowTS() - int64(hours*3600))
+}
+
 // ---------------------------------------------------------------- 预警读取
 
 // ListAlerts 列出预警事件，并补齐站点中文名。

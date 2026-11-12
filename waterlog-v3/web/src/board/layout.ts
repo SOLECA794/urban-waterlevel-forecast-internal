@@ -49,6 +49,12 @@ export type WidgetId =
   | 'delivery'
   | 'auditfeed'
   | 'versions'
+  | 'zonegrid'
+  | 'heatmap'
+  | 'riskmap'
+  | 'trendout'
+  | 'confidence'
+  | 'districtcmp'
 
 export const WIDGET_IDS: readonly WidgetId[] = [
   'situation',
@@ -82,6 +88,12 @@ export const WIDGET_IDS: readonly WidgetId[] = [
   'delivery',
   'auditfeed',
   'versions',
+  'zonegrid',
+  'heatmap',
+  'riskmap',
+  'trendout',
+  'confidence',
+  'districtcmp',
 ]
 
 export const WIDGET_TITLE: Record<WidgetId, string> = {
@@ -116,6 +128,12 @@ export const WIDGET_TITLE: Record<WidgetId, string> = {
   delivery: '通知投递',
   auditfeed: '操作审计',
   versions: '模型版本轨迹',
+  zonegrid: '辖区预测',
+  heatmap: '全域水位演进',
+  riskmap: '风险格局',
+  trendout: '全域趋势研判',
+  confidence: '预测可信度',
+  districtcmp: '多区对比',
 }
 
 export interface Rect {
@@ -159,7 +177,7 @@ const BALANCED: Record<WidgetId, Rect> = {
   health: R(1616, 963, 292, 105),
   lifecycle: R(1616, 831, 292, 120),
   decision: R(1616, 1068, 292, 0),
-  // 三个分析面板：归「图表分析」屏专用，坐标写在 scene.tsx 里。
+  // 分析面板：归「全域研判」屏专用，坐标写在 scene.tsx 里。
   // 这里给 h=0 的备用位是**有意为之**：预设版面本来已铺满，硬塞必然重叠；
   // 而 scene.rects 会在轮播时覆盖这几个值，所以落不到这来。
   // 注意它们仍会被渲染（Widget 对非当前场景只淡出、不卸载），
@@ -173,6 +191,12 @@ const BALANCED: Record<WidgetId, Rect> = {
   delivery: R(0, 0, 0, 0),
   auditfeed: R(0, 0, 0, 0),
   versions: R(0, 0, 0, 0),
+  zonegrid: R(0, 0, 0, 0),
+  heatmap: R(0, 0, 0, 0),
+  riskmap: R(0, 0, 0, 0),
+  trendout: R(0, 0, 0, 0),
+  confidence: R(0, 0, 0, 0),
+  districtcmp: R(0, 0, 0, 0),
 }
 
 /** 地图优先：两侧收窄，中间留给底图。 */
@@ -199,7 +223,7 @@ const MAP_FIRST: Record<WidgetId, Rect> = {
   health: R(1658, 963, 250, 105),
   lifecycle: R(1658, 831, 250, 120),
   decision: R(1658, 1068, 250, 0),
-  // 同 BALANCED：这三块归「图表分析」屏，坐标在 scene.tsx
+  // 同 BALANCED：这几块归「全域研判」屏，坐标在 scene.tsx
   residual: R(12, 1068, 250, 0),
   skillmatrix: R(274, 1068, 760, 0),
   decisions: R(1046, 1068, 294, 0),
@@ -209,6 +233,12 @@ const MAP_FIRST: Record<WidgetId, Rect> = {
   delivery: R(0, 0, 0, 0),
   auditfeed: R(0, 0, 0, 0),
   versions: R(0, 0, 0, 0),
+  zonegrid: R(0, 0, 0, 0),
+  heatmap: R(0, 0, 0, 0),
+  riskmap: R(0, 0, 0, 0),
+  trendout: R(0, 0, 0, 0),
+  confidence: R(0, 0, 0, 0),
+  districtcmp: R(0, 0, 0, 0),
 }
 
 /** 信息优先：两侧加宽，底图退成背景。 */
@@ -235,7 +265,7 @@ const INFO_FIRST: Record<WidgetId, Rect> = {
   health: R(1548, 963, 360, 105),
   lifecycle: R(1548, 831, 360, 120),
   decision: R(1548, 1068, 360, 0),
-  // 同 BALANCED：这三块归「图表分析」屏，坐标在 scene.tsx
+  // 同 BALANCED：这几块归「全域研判」屏，坐标在 scene.tsx
   residual: R(12, 1068, 360, 0),
   skillmatrix: R(384, 1068, 560, 0),
   decisions: R(956, 1068, 284, 0),
@@ -245,6 +275,12 @@ const INFO_FIRST: Record<WidgetId, Rect> = {
   delivery: R(0, 0, 0, 0),
   auditfeed: R(0, 0, 0, 0),
   versions: R(0, 0, 0, 0),
+  zonegrid: R(0, 0, 0, 0),
+  heatmap: R(0, 0, 0, 0),
+  riskmap: R(0, 0, 0, 0),
+  trendout: R(0, 0, 0, 0),
+  confidence: R(0, 0, 0, 0),
+  districtcmp: R(0, 0, 0, 0),
 }
 
 export const PRESETS: Record<PresetName, Record<WidgetId, Rect>> = {

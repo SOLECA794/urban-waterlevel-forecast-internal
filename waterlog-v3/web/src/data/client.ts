@@ -102,6 +102,9 @@ export const transport = {
     req<{ site_id: string; hours: number; points: SeriesPointDTO[] }>(
       `/api/sites/${id}/history?hours=${hours}`,
     ),
+  /** 所有站的历史序列，一次取回（大屏热力图/全域趋势用，避免十站十请求）。 */
+  allHistory: (hours = 24) =>
+    req<{ hours: number; sites: Record<string, SeriesPointDTO[]> }>(`/api/history?hours=${hours}`),
   forecast: () => req<ForecastPayloadDTO>('/api/forecast'),
 
   // ---------------------------------------------------------------- 预警

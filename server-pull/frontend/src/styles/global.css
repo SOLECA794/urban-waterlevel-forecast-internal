@@ -1,0 +1,82 @@
+/* 全局样式 + Tailwind 指令 + MapLibre 必需样式 */
+@import 'maplibre-gl/dist/maplibre-gl.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  background: #F8FAFC;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* Ant Design 覆盖 */
+.ant-card {
+  border: 1px solid #e2e8f0;
+}
+.ant-card-head {
+  border-bottom-color: #e2e8f0;
+}
+
+/* MapLibre 地图容器 */
+.maplibregl-canvas {
+  outline: none;
+}
+.maplibregl-popup-content {
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+/* Tooltip 在 Row 内换行处理 */
+.ant-row {
+  flex-wrap: wrap;
+}
+
+/* 仪表盘大屏模式 */
+.dashboard-mode {
+  background: #0B1120 !important;
+  color: #E2E8F0;
+}
+.dashboard-mode .ant-card {
+  background: #131C2E;
+  border-color: #1E2A40;
+  color: #E2E8F0;
+}
+.dashboard-mode .ant-card-head {
+  color: #94A3B8;
+  border-bottom-color: #1E2A40;
+}
+.dashboard-mode h2,
+.dashboard-mode .ant-statistic-title,
+.dashboard-mode .ant-statistic-content {
+  color: #E2E8F0 !important;
+}

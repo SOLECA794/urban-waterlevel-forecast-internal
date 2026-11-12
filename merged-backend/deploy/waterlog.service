@@ -1,0 +1,29 @@
+[Unit]
+Description=城市内涝水位预测系统（Go 后端）
+After=network.target
+
+[Service]
+Type=simple
+User=waterlog
+Group=waterlog
+WorkingDirectory=/opt/waterlog
+ExecStart=/opt/waterlog/waterlog-server
+Restart=on-failure
+RestartSec=5
+
+# 环境变量
+Environment="ADDR=:8080"
+Environment="DB_PATH=/opt/waterlog/data/app.db"
+Environment="DEMO_MODE=false"
+Environment="OPENMETEO_ENABLED=true"
+Environment="FORECAST_SCHEDULE_MIN=5"
+Environment="CORS_ORIGINS="
+
+# 安全加固
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/waterlog/data
+
+[Install]
+WantedBy=multi-user.target

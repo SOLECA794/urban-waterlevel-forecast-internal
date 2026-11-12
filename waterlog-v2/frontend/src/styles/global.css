@@ -1,0 +1,201 @@
+/* 全局基础样式 + Tailwind 指令 + MapLibre 必需样式
+   设计令牌见 src/styles/tokens.css
+   规范依据：docs/02-design/DESIGN-v2-设计系统规范.md */
+@import 'maplibre-gl/dist/maplibre-gl.css';
+@import './tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  background: var(--bg-canvas);
+  color: var(--text-1);
+}
+
+* { box-sizing: border-box; }
+
+/* 中文可读性下限：:root 14px 时 Tailwind 的 text-xs(0.75rem) 只有 10.5px，
+   中文笔画会糊连。统一抬到 12px（规范 §2 字阶下限）。 */
+html .text-xs { font-size: var(--fs-xs); line-height: 1.35; }
+html .text-sm { font-size: var(--fs-sm); }
+html .text-base { font-size: var(--fs-base); }
+
+/* 数字统一等宽对齐（水位/时间/百分比），数值滚动时不抖动 */
+.num, .ant-statistic-content, .font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 键盘可达性：统一焦点环 */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+  border-radius: var(--radius-control);
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.18); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(15, 23, 42, 0.32); }
+
+/* ============ Ant Design 细节对齐契约 ============ */
+.ant-card {
+  border-color: var(--border-1);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-1);
+}
+.ant-card-head { border-bottom-color: var(--border-2); min-height: 40px; }
+.ant-card-head-title { font-size: var(--fs-base); font-weight: var(--fw-semibold); }
+.ant-card-body { padding: var(--sp-4); }
+.ant-table-thead > tr > th {
+  background: var(--bg-subtle);
+  color: var(--text-2);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-sm);
+}
+.ant-table-tbody > tr > td { font-size: var(--fs-sm); }
+.ant-btn { border-radius: var(--radius-control); }
+.ant-tag { border-radius: var(--radius-control); }
+.ant-empty-description { color: var(--text-3); font-size: var(--fs-sm); }
+
+/* ant-row 换行 */
+.ant-row { flex-wrap: wrap; }
+
+/* ============ 统一容器（规范 §4 圆角一致性锁） ============ */
+.surface-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-card);
+}
+
+/* ============ 物理反馈（规范 §6 交互态） ============ */
+.press {
+  transition: transform var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out),
+              background-color var(--dur-fast) var(--ease-in-out);
+}
+.press:active { transform: scale(0.98); }
+
+/* ============ 进场动效（规范 §5.2 层级动机） ============ */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.page-anim { animation: rise-in var(--dur-base) var(--ease-out) both; }
+
+/* 级联进场：子元素按 --i 索引延迟，总时长不超过 240ms */
+.stagger-item {
+  animation: rise-in var(--dur-base) var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+
+/* ============ KPI 卡片（规范 §5.2 反馈动机） ============ */
+.kpi-card {
+  transition: box-shadow var(--dur-fast) var(--ease-out),
+              transform var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-in-out);
+}
+.kpi-card:hover {
+  box-shadow: var(--shadow-2);
+  transform: translateY(-1px);
+  border-color: var(--border-strong);
+}
+.kpi-card:active { transform: translateY(0) scale(0.99); }
+
+/* ============ 告警脉冲（规范 §5.2 状态转换动机） ============ */
+@keyframes alarm-pulse {
+  0%   { box-shadow: 0 0 0 0 var(--pulse-color, rgba(220, 38, 38, 0.45)); }
+  70%  { box-shadow: 0 0 0 8px rgba(0, 0, 0, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 0, 0, 0); }
+}
+.alarm-pulse { animation: alarm-pulse 1.6s var(--ease-out) 2; }
+
+/* ============ 在线心跳点（规范 §5.2 状态动机） ============ */
+@keyframes live-breathe {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(0.85); }
+}
+.live-dot {
+  width: 7px; height: 7px;
+  border-radius: var(--radius-pill);
+  display: inline-block;
+  animation: live-breathe 2.4s var(--ease-in-out) infinite;
+}
+
+/* ============ 等级左边条（规范 §1.3 双轨制） ============ */
+.level-bar {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  border-radius: var(--radius-pill) 0 0 var(--radius-pill);
+}
+
+/* ============ 统一空态（规范 §6） ============ */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-8) var(--sp-4);
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+.empty-state .empty-title {
+  color: var(--text-2);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+
+/* MapLibre 地图容器：加载中不出现白板 */
+.maplibregl-canvas { outline: none; }
+.maplibregl-popup-content {
+  border-radius: var(--radius-control);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-sm);
+}
+.map-loading-placeholder {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-sunken);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  z-index: 5;
+}
+
+/* ---- 深色大屏模式（辅助谱系，仅反转表面，语义色不变） ---- */
+.dashboard-mode {
+  background: #0B1120 !important;
+  color: #E2E8F0;
+}
+.dashboard-mode .ant-card {
+  background: #131C2E;
+  border-color: #1E2A40;
+  color: #E2E8F0;
+}
+.dashboard-mode .ant-card-head { color: #94A3B8; border-bottom-color: #1E2A40; }
+.dashboard-mode h2,
+.dashboard-mode .ant-statistic-title,
+.dashboard-mode .ant-statistic-content { color: #E2E8F0 !important; }
+
+/* ---- 响应式：<768px 收紧页面留白、状态条降噪 ---- */
+@media (max-width: 767px) {
+  .page-pad { padding: 12px !important; }
+  .statusbar-secondary { display: none !important; }
+  .stat-grid-4, .stat-grid-4 .ant-col { flex: 0 0 50% !important; max-width: 50% !important; }
+}
+
+/* ---- 动效降级：规范 §5.3，一刀切关闭所有动画与过渡 ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

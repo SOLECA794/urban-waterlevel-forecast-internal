@@ -1,0 +1,626 @@
+[
+ {
+  "h2": "资源目录服务",
+  "h3": "区域信息",
+  "h4": "获取所有树编码",
+  "addr": "/api/cisrm/v1/device/queryRealtimeDataByPage"
+ },
+ {
+  "h2": "资源目录服务",
+  "h3": "区域信息",
+  "h4": "分页获取区域列表",
+  "addr": "/api/resource/v1/regions"
+ },
+ {
+  "h2": "资源目录服务",
+  "h3": "区域信息",
+  "h4": "获取根区域信息",
+  "addr": "/api/video/v1/ptzs/selZoom"
+ },
+ {
+  "h2": "资源目录服务",
+  "h3": "区域信息",
+  "h4": "根据区域编号获取下一级区域列表",
+  "addr": "/api/resource/v1/regions/subRegions"
+ },
+ {
+  "h2": "资源目录服务",
+  "h3": "区域信息",
+  "h4": "根据组织编号获取下一层有监控点资源的子组织列表",
+  "addr": "/api/resource/v1/unit/getChildUnitsWithCameraByUnitIndexCode"
+ },
+ {
+  "h2": "资源目录服务",
+  "h3": "编码设备信息",
+  "h4": "分页获取编码设备",
+  "addr": "/api/resource/v1/device/getDeviceWithPage"
+ },
+ {
+  "h2": "资源目录服务",
+  "h3": "编码设备信息",
+  "h4": "根据区域编号获取下级编码设备列表",
+  "addr": "/api/api/resource/v1/device/getDeviceByUnitIndexCodeWithPage"
+ },
+ {
+  "h2": "资源目录服务",
+  "h3": "编码设备信息",
+  "h4": "根据设备编号获取编码设备详细信息",
+  "addr": "/api/resource/v1/device/getDeviceByIndexCode"
+ },
+ {
+  "h2": "资源目录服务",
+  "h3": "车辆卡口资源信息",
+  "h4": "修改卡口经纬度",
+  "addr": "/api/resource/v1/crossing/modifyCrossOperationResource"
+ },
+ {
+  "h2": "资源目录服务",
+  "h3": "车辆卡口资源信息",
+  "h4": "分页获取卡口资源",
+  "addr": "/api/resource/v1/crossing/getCrossingsWithPage"
+ },
+ {
+  "h2": "资源目录服务",
+  "h3": "车辆卡口资源信息",
+  "h4": "根据空间条件分页查询卡口资源",
+  "addr": "/api/resource/v1/crossing/getCrossingsBySpatialIndexWithPage"
+ },
+ {
+  "h2": "资源目录服务",
+  "h3": "车辆卡口资源信息",
+  "h4": "根据组织编号分页获取卡口资源列表",
+  "addr": "/api/resource/v1/crossing/getCrossingsByUnitIndexCodeWithPage"
+ },
+ {
+  "h2": "资源目录服务",
+  "h3": "车辆卡口资源信息",
+  "h4": "根据卡口编号分页获取车道资源",
+  "addr": "/api/resource/v1/crossing/getLanesByCrossingIndexCodes"
+ },
+ {
+  "h2": "资源目录服务",
+  "h3": "车辆卡口资源信息",
+  "h4": "根据编号获取卡口详细信息",
+  "addr": "/api/resource/v1/crossing/getCrossingByCrossingIndexCode"
+ },
+ {
+  "h2": "资源目录服务",
+  "h3": "车辆卡口资源信息",
+  "h4": "根据编号获取车道详细信息",
+  "addr": "/api/resource/v3/crossing/getLaneDetailsByLaneIndexCode"
+ },
+ {
+  "h2": "资源目录服务",
+  "h3": "监控资源信息",
+  "h4": "修改监控点经纬度",
+  "addr": "/api/resource/v1/camera/modifyCameraOperationResource"
+ },
+ {
+  "h2": "资源目录服务",
+  "h3": "监控资源信息",
+  "h4": "分页获取监控点资源",
+  "addr": "/api/resource/v1/cameras"
+ },
+ {
+  "h2": "资源目录服务",
+  "h3": "监控资源信息",
+  "h4": "根据空间条件分页查询监控点资源",
+  "addr": "/api/resource/v1/camera/getCamerasBySpatialIndexWithPage"
+ },
+ {
+  "h2": "资源目录服务",
+  "h3": "监控资源信息",
+  "h4": "根据区域编号获取下级监控点列表",
+  "addr": "/api/resource/v1/regions/regionIndexCode/cameras"
+ },
+ {
+  "h2": "资源目录服务",
+  "h3": "监控资源信息",
+  "h4": "根据编号获取监控点详细信息",
+  "addr": "/api/resource/v1/cameras/indexCode"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "视频能力",
+  "h4": "删除预置点信息",
+  "addr": "/api/cisrm/v1/device/queryRealtimeDataByPage"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "视频能力",
+  "h4": "查询预置点信息",
+  "addr": "/api/video/v1/presets/searches"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "视频能力",
+  "h4": "根据监控点列表查询录像完整性结果",
+  "addr": "/api/nms/v1/record/list"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "视频能力",
+  "h4": "根据监控点编号进行3D放大",
+  "addr": "/api/video/v1/ptzs/selZoom"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "视频能力",
+  "h4": "根据监控点编号进行云台操作",
+  "addr": "/api/video/v1/ptzs/controlling"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "视频能力",
+  "h4": "获取监控点回放取流URL",
+  "addr": "/api/video/v1/cameras/playbackURLs"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "视频能力",
+  "h4": "获取监控点预览取流URL",
+  "addr": "/api/video/v1/cameras/previewURLs"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "视频能力",
+  "h4": "设置预置点信息",
+  "addr": "/api/video/v1/presets/addition"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "视频能力",
+  "h4": "语音对讲",
+  "addr": "/api/video/v3/cameras/talkURLs"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "视频能力",
+  "h4": "根据监控点列表查询视频质量诊断结果",
+  "addr": "/api/nms/v1/vqd/list"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "电视墙",
+  "h4": "获取电视墙大屏信息",
+  "addr": "/api/tvms/v1/tvwall/allResources"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "电视墙",
+  "h4": "获取电视墙场景列表信息",
+  "addr": "/api/tvms/v1/tvwall/scenes"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "电视墙",
+  "h4": "获取电视墙窗口信息列表",
+  "addr": "/api/tvms/v1/tvwall/wnds/get"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "电视墙",
+  "h4": "批量上墙",
+  "addr": "/api/tvms/v1/tvwall/realplay/add"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "电视墙",
+  "h4": "批量下墙",
+  "addr": "/api/tvms/v1/tvwall/realplay/delete"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "电视墙",
+  "h4": "场景创建",
+  "addr": "/api/tvms/v1/public/tvwall/scene/addition"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "电视墙",
+  "h4": "场景修改",
+  "addr": "/api/tvms/v1/public/tvwall/scene/update"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "电视墙",
+  "h4": "场景删除",
+  "addr": "/api/tvms/v1/public/tvwall/scene/deletion"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "电视墙",
+  "h4": "场景另存为",
+  "addr": "/api/resource/v1/crossing/getLanesByCrossingIndexCodes"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "电视墙",
+  "h4": "电视墙场景切换",
+  "addr": "/api/tvms/v1/tvwall/scene/switch"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "电视墙",
+  "h4": "新增报警",
+  "addr": "/api/tvms/v1/public/tvwall/alarm/addition"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "电视墙",
+  "h4": "删除报警",
+  "addr": "/api/tvms/v1/public/tvwall/alarm/deletion"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "电视墙",
+  "h4": "窗口分割",
+  "addr": "/api/tvms/v1/public/tvwall/floatWnd/division"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "电视墙",
+  "h4": "窗口批量创建",
+  "addr": "/api/tvms/v1/public/tvwall/floatWnds/addition"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "电视墙",
+  "h4": "窗口批量删除",
+  "addr": "/api/tvms/v1/public/tvwall/floatWnds/deletion"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "电视墙",
+  "h4": "窗口放大",
+  "addr": "/api/tvms/v1/public/tvwall/floatWnd/zoomIn"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "电视墙",
+  "h4": "窗口漫游",
+  "addr": "/api/tvms/v1/public/tvwall/floatWnd/move"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "电视墙",
+  "h4": "窗口置顶或置底",
+  "addr": "/api/tvms/v1/public/tvwall/floatWnd/layerCtrl"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "电视墙",
+  "h4": "窗口还原",
+  "addr": "/api/tvms/v1/public/tvwall/floatWnd/zoomOut"
+ },
+ {
+  "h2": "视频应用服务",
+  "h3": "电视墙",
+  "h4": "非开窗设备窗口分割",
+  "addr": "/api/tvms/v1/public/tvwall/monitor/division"
+ },
+ {
+  "h2": "通用服务",
+  "h3": "事件订阅",
+  "h4": "按事件类型取消订阅",
+  "addr": "/api/cisrm/v1/device/queryRealtimeDataByPage"
+ },
+ {
+  "h2": "通用服务",
+  "h3": "事件订阅",
+  "h4": "按事件类型订阅事件",
+  "addr": "/api/eventService/v1/eventSubscriptionByEventTypes"
+ },
+ {
+  "h2": "通用服务",
+  "h3": "事件订阅",
+  "h4": "查询事件订阅信息",
+  "addr": "/api/eventService/v1/eventSubscriptionView"
+ },
+ {
+  "h2": "通用服务",
+  "h3": "数据字典服务",
+  "h4": "根据字典类型查第一层字典项",
+  "addr": "/api/common/v1/dictionary/getFirstLayerByTypeCode"
+ },
+ {
+  "h2": "通用服务",
+  "h3": "数据字典服务",
+  "h4": "根据字典类型和字典项key值查询下一层字典项",
+  "addr": "/api/video/v1/presets/addition"
+ },
+ {
+  "h2": "通用服务",
+  "h3": "数据字典服务",
+  "h4": "根据字典类型字典项value查询字典项详情",
+  "addr": "/api/common/v1/dictionary/getByTypeCodeAndDataValue"
+ },
+ {
+  "h2": "基础设施服务",
+  "h3": "分页查询设备实时监测数据",
+  "h4": null,
+  "addr": "/api/cisrm/v1/device/queryRealtimeDataByPage"
+ },
+ {
+  "h2": "基础设施服务",
+  "h3": "分页查询设备历史监测数据",
+  "h4": null,
+  "addr": "/api/cisrm/v1/device/queryHistoryDataByPage"
+ },
+ {
+  "h2": "基础设施服务",
+  "h3": "分页查询设备基本信息",
+  "h4": null,
+  "addr": "/api/cisrm/v1/device/findByParams"
+ },
+ {
+  "h2": "基础设施服务",
+  "h3": "分页查询设备运行状态",
+  "h4": null,
+  "addr": "/api/cisrm/v1/device/queryRunningStatus"
+ },
+ {
+  "h2": "基础设施服务",
+  "h3": "分页查询设施报警记录",
+  "h4": null,
+  "addr": "/api/cisrm/v1/facilities/findAlarmByParams"
+ },
+ {
+  "h2": "基础设施服务",
+  "h3": "分页查询设施数据",
+  "h4": null,
+  "addr": "/api/api/resource/v1/device/getDeviceByUnitIndexCodeWithPage"
+ },
+ {
+  "h2": "基础设施服务",
+  "h3": "根据设备ID获取设备报警配置",
+  "h4": null,
+  "addr": "/api/cisrm/v1/device/queryAlarmConfig"
+ },
+ {
+  "h2": "基础设施服务",
+  "h3": "根据设施ID获取设施最新监测数据",
+  "h4": null,
+  "addr": "/api/cisrm/v1/facilities/data"
+ },
+ {
+  "h2": "基础设施服务",
+  "h3": "统计设备在线情况",
+  "h4": null,
+  "addr": "/api/cisrm/v1/device/deviceOnlineStatistics"
+ },
+ {
+  "h2": "基础设施服务",
+  "h3": "获取所有设施类型",
+  "h4": null,
+  "addr": "/api/cisrm/v1/facilities/types"
+ },
+ {
+  "h2": "基础设施服务",
+  "h3": "获取报警类型",
+  "h4": null,
+  "addr": "/api/cisrm/v1/device/alarmTypes"
+ },
+ {
+  "h2": "基础设施服务",
+  "h3": "获取设备类型",
+  "h4": null,
+  "addr": "/api/cisrm/v1/device/types"
+ },
+ {
+  "h2": "巡检巡查服务",
+  "h3": "保存或更新巡查对象",
+  "h4": null,
+  "addr": "/api/cisrm/v1/device/queryRealtimeDataByPage"
+ },
+ {
+  "h2": "巡检巡查服务",
+  "h3": "分页查询巡查任务",
+  "h4": null,
+  "addr": "/api/v1/application/citycasehandle-ptl/service/rs/ptl/v1/queryPtlTaskByPage"
+ },
+ {
+  "h2": "巡检巡查服务",
+  "h3": "分页查询巡查对象",
+  "h4": null,
+  "addr": "/api/v1/application/citycasehandle-ptl/service/rs/ptl/v1/queryPtlObjByPage"
+ },
+ {
+  "h2": "巡检巡查服务",
+  "h3": "分页查询巡查结果",
+  "h4": null,
+  "addr": "/api/v1/application/citycasehandle-ptl/service/rs/ptl/v1/queryPtlResultByPage"
+ },
+ {
+  "h2": "巡检巡查服务",
+  "h3": "分页查询巡查计划",
+  "h4": null,
+  "addr": "/api/v1/application/citycasehandle-ptl/service/rs/ptl/v1/queryPtlPlanByPage"
+ },
+ {
+  "h2": "巡检巡查服务",
+  "h3": "删除巡查对象",
+  "h4": null,
+  "addr": "/api/v1/application/citycasehandle-ptl/service/rs/ptl/v1/deletePtlObjs"
+ },
+ {
+  "h2": "巡检巡查服务",
+  "h3": "查询巡查任务详情",
+  "h4": null,
+  "addr": "/api/v1/application/citycasehandle-ptl/service/rs/ptl/v1/queryPtlTaskDetail"
+ },
+ {
+  "h2": "巡检巡查服务",
+  "h3": "查询巡查计划详情",
+  "h4": null,
+  "addr": "/api/v1/application/citycasehandle-ptl/service/rs/ptl/v1/queryPtlPlanDetail"
+ },
+ {
+  "h2": "案件办理服务",
+  "h3": "事件上报",
+  "h4": null,
+  "addr": "/api/cisrm/v1/device/queryRealtimeDataByPage"
+ },
+ {
+  "h2": "案件办理服务",
+  "h3": "分页查询事件",
+  "h4": null,
+  "addr": "/api/v1/application/citycasehandle/service/rs/case/v1/query"
+ },
+ {
+  "h2": "案件办理服务",
+  "h3": "查询事件办理经过信息",
+  "h4": null,
+  "addr": "/api/v1/application/citycasehandle-ptl/service/rs/ptl/v1/queryPtlTaskByPage"
+ },
+ {
+  "h2": "案件办理服务",
+  "h3": "查询事件基本统计数据",
+  "h4": null,
+  "addr": "/api/v1/application/citycasehandle/service/rs/case/v1/statistics/baseInfo/count"
+ },
+ {
+  "h2": "风险清单服务",
+  "h3": "风险单元分页查询",
+  "h4": null,
+  "addr": "/api/cisrm/v1/device/queryRealtimeDataByPage"
+ },
+ {
+  "h2": "风险清单服务",
+  "h3": "风险类别分页查询",
+  "h4": null,
+  "addr": "/api/v1/drrm/riskType/findPage"
+ },
+ {
+  "h2": "风险清单服务",
+  "h3": "风险预警下发处置",
+  "h4": null,
+  "addr": "/api/v1/drrm/riskAlarm/issue"
+ },
+ {
+  "h2": "风险清单服务",
+  "h3": "风险预警分页查询",
+  "h4": null,
+  "addr": "/api/v1/drrm/riskAlarm/findPage"
+ },
+ {
+  "h2": "市政设施服务",
+  "h3": "分页查询终端设备信息",
+  "h4": null,
+  "addr": "/api/cisrm/v1/device/queryRealtimeDataByPage"
+ },
+ {
+  "h2": "市政设施服务",
+  "h3": "分页查询设施信息",
+  "h4": null,
+  "addr": "/api/v1/application/citycasehandle/service/rs/case/v1/query"
+ },
+ {
+  "h2": "市政设施服务",
+  "h3": "分页查询设施报警信息",
+  "h4": null,
+  "addr": "/api/nms/v1/record/list"
+ },
+ {
+  "h2": "市政设施服务",
+  "h3": "分页查询终端历史数据",
+  "h4": null,
+  "addr": "/api/eventService/v1/eventSubscriptionView"
+ },
+ {
+  "h2": "市政设施服务",
+  "h3": "根据终端编号查询终端信息",
+  "h4": null,
+  "addr": "/api/bmunicipal/v1/artemis/device/findByDeviceNumber"
+ },
+ {
+  "h2": "市政设施服务",
+  "h3": "终端自适应指令下发",
+  "h4": null,
+  "addr": "/api/bmunicipal/v1/artemis/device/data/cmd/send"
+ },
+ {
+  "h2": "动环监控接口",
+  "h3": "分页查询动环传感器",
+  "h4": null,
+  "addr": "/api/pems/v1/monitor/search"
+ },
+ {
+  "h2": "动环监控接口",
+  "h3": "分页查询动环报警输入",
+  "h4": null,
+  "addr": "/api/pems/v1/alarm_in/search"
+ },
+ {
+  "h2": "动环监控接口",
+  "h3": "分页查询动环环境量",
+  "h4": null,
+  "addr": "/api/pems/v1/sensor/search"
+ },
+ {
+  "h2": "动环监控接口",
+  "h3": "分页查询环境量的阈值配置",
+  "h4": null,
+  "addr": "/api/pems/v1/public/sensor/threshold"
+ },
+ {
+  "h2": "动环监控接口",
+  "h3": "动环开关控制V1",
+  "h4": null,
+  "addr": "/api/pems/v1/monitor/pemsIoOut/control"
+ },
+ {
+  "h2": "动环监控接口",
+  "h3": "动环开关控制V2",
+  "h4": null,
+  "addr": "/api/pems/v2/monitor/pemsIoOut/control"
+ },
+ {
+  "h2": "动环监控接口",
+  "h3": "动环开关状态获取V1",
+  "h4": null,
+  "addr": "/api/pems/v1/monitor/pemsIoOut/state"
+ },
+ {
+  "h2": "动环监控接口",
+  "h3": "动环开关状态获取V2",
+  "h4": null,
+  "addr": "/api/pems/v2/monitor/pemsIoOut/state"
+ },
+ {
+  "h2": "动环监控接口",
+  "h3": "批量获取环境量统计数据",
+  "h4": null,
+  "addr": "/api/pems/v1/public/monitor/history/statistics/batch"
+ },
+ {
+  "h2": "动环监控接口",
+  "h3": "查询环境量前几天的实时数据",
+  "h4": null,
+  "addr": "/api/pems/v3/public/sensor/history-data"
+ },
+ {
+  "h2": "动环监控接口",
+  "h3": "获取当日环境量最新实时数据",
+  "h4": null,
+  "addr": "/api/pems/v1/public/monitor/history/latestValue"
+ },
+ {
+  "h2": "动环监控接口",
+  "h3": "获取环境量的事件类型",
+  "h4": null,
+  "addr": "/api/pems/v1/public/monitor/getThresholdList"
+ },
+ {
+  "h2": "动环监控接口",
+  "h3": "获取环境量类型",
+  "h4": null,
+  "addr": "/api/pems/v1/public/monitor/sensor/types"
+ },
+ {
+  "h2": "动环监控接口",
+  "h3": "获得统计数据_环境量",
+  "h4": null,
+  "addr": "/api/pems/v1/public/monitor/history/statistics"
+ }
+]

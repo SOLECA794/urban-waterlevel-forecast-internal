@@ -1,0 +1,155 @@
+A1=一、表一：AI水位预测及预警平台对基础平台的调用接口清单（12条）
+A2=序号 | B2=接口名称 | C2=接口地址 | D2=请求方法 | E2=核心入参 | F2=核心出参 | G2=调用频率 | H2=超时建议 | I2=失败重试策略 | J2=对应功能条款 | K2=备注
+A3=1 | B3=分页查询设备实时监测数据 | C3=/api/cisrm/v1/device/queryRealtimeDataByPage | D3=POST + application/json | E3=deviceIds（设备ID集合）、monitorItemCodes（监测项标识）、pageNo、pageSize | F3=code（响应码）、msg（提示信息）、data.total（总条数）、data.list[].deviceId、data.list[].monitorValue、data.list[].collectTime（ISO8601带时区） | G3=实时展示 30s/次；预警判定 1min/次 | H3=5s | I3=读类幂等接口，超时/5xx/网络异常重试 2 次，间隔 1s、3s 指数退避；code≠0 不重试，记录日志 | J3=预警功能配置-4 监测数据规则判定；AI平台-4 多时间尺度预测；内涝底座接口开放-1 | K3=监测点位实时值核心数据源；批量 deviceIds 单次≤100，避免全量拉取
+A4=2 | B4=分页查询设备历史监测数据 | C4=/api/cisrm/v1/device/queryHistoryDataByPage | D4=POST + application/json | E4=deviceIds、monitorItemCodes、beginTime、endTime（ISO8601带时区）、pageNo、pageSize | F4=code、msg、data.total、data.list[].deviceId、monitorValue、collectTime | G4=预测任务触发时按需查询；趋势分析 10min/次 | H4=10s | I4=幂等读接口，重试 3 次，间隔 2s/5s/10s；时间区间过大时拆分区间串行拉取 | J4=AI平台-3 多模态AI协同分析；AI平台-7 预测结果展示与历史分析 | K4=单次查询时间跨度建议≤7天，pageSize≤1000；用于历史样本与实测对照
+A5=3 | B5=分页查询设备基本信息 | C5=/api/cisrm/v1/device/findByParams | D5=POST + application/json | E5=deviceName（模糊）、deviceType、regionIndexCode、pageNo、pageSize | F5=code、msg、data.total、data.list[].deviceId、deviceName、deviceType、regionIndexCode、installPlace、longitude、latitude | G5=启动时加载 1 次/日；配置变更后增量刷新 | H5=5s | I5=幂等读接口，重试 2 次，间隔 1s/3s；失败降级读本地缓存 | J5=AI平台-1 多源异构数据融合；预警功能配置-2 预警阈值分级配置 | K5=点位经纬度、安装位置用于风险点位与地图关联展示
+A6=4 | B6=分页查询设备运行状态 | C6=/api/cisrm/v1/device/queryRunningStatus | D6=POST + application/json | E6=deviceIds、pageNo、pageSize | F6=code、msg、data.list[].deviceId、onlineStatus（在线/离线）、battery、voltage、signalStrength、updateTime | G6=运维看板 5min/次 | H6=5s | I6=幂等读接口，重试 2 次，间隔 1s、3s | J6=预警功能配置-6 规则维护与运行追溯；AI平台-9 预测运行管理 | K6=离线/数据缺失时预测任务标注「输入数据缺失」状态
+A7=5 | B7=分页获取区域列表 | C7=/api/resource/v1/regions | D7=POST + application/json | E7=parentIndexCode（父区域编号，可为空）、regionType、pageNo、pageSize | F7=code、msg、data.total、data.list[].indexCode（区域编号）、name（区域名称）、parentIndexCode、regionType | G7=启动加载 1 次 + 每日 1 次全量同步 | H7=5s | I7=幂等读接口，重试 2 次，间隔 1s、3s；失败沿用本地字典 | J7=预警功能配置-2 预警阈值分级配置（按区域配置）；内涝底座接口开放-3 | K7=区域树为预警规则、统计分析与权限数据域的划分依据
+A8=6 | B8=根据区域编号获取下一级区域列表 | C8=/api/resource/v1/regions/subRegions | D8=POST + application/json | E8=indexCode（上级区域编号）、pageNo、pageSize | F8=code、msg、data.list[].indexCode、name、parentIndexCode | G8=区域树展开时按需调用；可缓存 24h | H8=5s | I8=幂等读接口，重试 2 次，间隔 1s、3s；结果缓存 24h | J8=预警功能配置-2 预警阈值分级配置；内涝底座接口开放-3 | K8=按层级懒加载，减少全量区域传输开销
+A9=7 | B9=分页获取监控点资源 | C9=/api/resource/v1/cameras | D9=POST + application/json | E9=regionIndexCode、pageNo、pageSize | F9=code、msg、data.total、data.list[].cameraIndexCode（监控点编号）、cameraName、regionIndexCode、longitude、latitude | G9=启动加载 1 次 + 每日同步 | H9=8s | I9=幂等读接口，重试 2 次，间隔 2s、5s | J9=AI平台-1 多源异构数据融合（视频源）；内涝底座接口开放-2 | K9=监控点与易涝点、监测设备做空间关联
+A10=8 | B10=根据空间条件分页查询监控点资源 | C10=/api/resource/v1/camera/getCamerasBySpatialIndexWithPage | D10=POST + application/json | E10=spatialIndex（空间索引/区域编号）、pageNo、pageSize | F10=code、msg、data.total、data.list[].cameraIndexCode、cameraName、longitude、latitude | G10=按点位范围查询时实时调用 | H10=8s | I10=幂等读接口，重试 2 次，间隔 2s、5s | J10=AI平台-1 多源异构数据融合（空间关联）；AI平台-7 风险点位展示 | K10=用于「点位—周边视频」空间检索，支撑积水识别取流
+A11=9 | B11=获取监控点预览取流URL | C11=/api/video/v1/cameras/previewURLs | D11=POST + application/json | E11=cameraIndexCode、protocol（rtsp/hls/rtmp）、streamType（0主/1子）、transmode | F11=code、msg、data.url（取流地址）、data.expireTime | G11=用户点击预览时按需调用 | H11=10s | I11=获取 URL 失败重试 2 次，间隔 1s、3s；URL 过期自动重新获取 | J11=模型应用与调配-1 训练数据组织与管理（视频取流）；内涝底座接口开放-2 | K11=取流 URL 具时效性，禁止落库长期缓存；须在有效期内使用
+A12=10 | B12=获取监控点回放取流URL | C12=/api/video/v1/cameras/playbackURLs | D12=POST + application/json | E12=cameraIndexCode、beginTime、endTime（ISO8601带时区）、protocol、streamType | F12=code、msg、data.url、data.expireTime | G12=事件复核/录像下载时按需调用 | H12=10s | I12=获取 URL 失败重试 2 次，间隔 1s、3s；时间区间过大时分段获取 | J12=模型应用与调配-1 训练数据组织与管理（样本回溯）；内涝底座接口开放-2 | K12=用于积水事件复核与训练样本回溯，单段录像建议≤1小时
+A13=11 | B13=根据监控点列表查询视频质量诊断结果 | C13=/api/nms/v1/vqd/list | D13=POST + application/json | E13=cameraIndexCodes（监控点编号列表）、beginTime、endTime、pageNo、pageSize | F13=code、msg、data.total、data.list[].cameraIndexCode、diagnoseTime、diagnoseResult（诊断项与异常结论） | G13=每日 1 次巡检；异常点位 1h/次 | H13=15s | I13=幂等读接口，重试 2 次，间隔 3s、6s；批量 cameraIndexCodes≤50 | J13=预警功能配置-6 规则维护与运行追溯；模型应用与调配-7 模型调用与算力运行管理 | K13=视频质量异常点位置信度降权，避免脏数据影响积水识别
+A14=12 | B14=按事件类型订阅事件 | C14=/api/eventService/v1/eventSubscriptionByEventTypes | D14=POST + application/json | E14=eventTypes（事件类型号段列表）、subType、callbackUrl（回调地址）、srcIp | F14=code、msg、data.subscribeId（订阅ID） | G14=平台启动时订阅 1 次，断线重连后重订阅 | H14=10s | I14=非幂等写接口，超时后先查询订阅状态再决定是否重提；重试 3 次，间隔 5s/15s/30s | J14=预警功能配置-5 分级告警与信息关联；内涝底座接口开放-4 事件订阅 | K14=事件类型号段须向平台统一申请；回调接口须实现验签与幂等去重
+A15=二、表二：AI水位预测及预警平台对外服务接口清单（9条）
+A16=序号 | B16=接口名称 | C16=接口地址建议 | D16=请求方法 | E16=核心入参 | F16=核心出参 | G16=调用方式（同步/异步） | H16=对应功能条款 | I16=备注
+A17=1 | B17=水位趋势预测结果查询 | C17=/api/aiwater/v1/prediction/result | D17=POST + application/json | E17=pointCode（点位编号）、period（预见期：1h/3h/6h/12h，可多值）、beginTime、endTime、pageNo、pageSize | F17=code、msg、data.list[].pointCode、period、predictTime、predictLevel（预测水位）、riskLevel、confidence、modelVersion | G17=同步 | H17=AI平台-4 多时间尺度水位趋势预测；AI平台-7 预测结果展示与历史分析 | I17=单接口以 period 参数覆盖 1/3/6/12 小时四个预见期；结果带版本与修正标识
+A18=2 | B18=风险等级实时查询 | C18=/api/aiwater/v1/risk/realtime | D18=POST + application/json | E18=pointCode 或 regionIndexCode（二选一）、level（high/medium/low，可选过滤） | F18=code、msg、data.list[].pointCode、riskLevel（高/中/低）、currentLevel、predictLevel、riskTime、ruleId | G18=同步 | H18=AI平台-5 风险等级智能研判；预警功能配置-5 分级告警与信息关联 | I18=与预警阈值规则共用同一套配置；无风险时返回空列表而非报错
+A19=3 | B19=预警记录分页查询 | C19=/api/aiwater/v1/warning/records | D19=POST + application/json | E19=regionIndexCode、level（高/中/低）、beginTime、endTime、status、pageNo、pageSize | F19=code、msg、data.total、data.list[].warningId、pointCode、level、triggerValue、threshold、rainScene、triggerTime、status | G19=同步 | H19=预警功能配置-5 分级告警与信息关联；预警功能配置-6 规则维护与运行追溯 | I19=支持按时间、区域、等级组合筛选；默认按 triggerTime 倒序
+A20=4 | B20=雨情场景与阈值规则配置查询 | C20=/api/aiwater/v1/config/rainrule | D20=POST + application/json | E20=pointCode、deviceType、monitorItemCode、rainScene（晴天/小雨/中雨/强降雨） | F20=code、msg、data.list[].ruleId、pointCode、monitorItemCode、rainScene、thresholdUpper、thresholdLower、level、enabled、effectTime | G20=同步 | H20=预警功能配置-1 雨情场景识别与适配；预警功能配置-2 预警阈值分级配置；预警功能配置-3 动态阈值自动调整 | I20=配置类接口默认只读；变更走配置管理通道并留存操作日志
+A21=5 | B21=模型版本列表与切换 | C21=/api/aiwater/v1/model/versions | D21=POST + application/json | E21=taskType（积水识别/异常检测/水位预测）、action（list/switch）、versionId（切换时必填） | F21=code、msg、data.list[].versionId、versionName、taskType、deployTime、status（生效/历史）；切换时返回 data.effectiveTime | G21=同步 | H21=模型应用与调配-4 模型版本与部署管理；AI平台-6 多源协同动态修正 | I21=list 与 switch 通过 action 区分；切换为写操作需二次确认与操作审计
+A22=6 | B22=预测任务提交 | C22=/api/aiwater/v1/prediction/task/submit | D22=POST + application/json | E22=pointCodes（点位集合）、periods（预见期集合）、beginTime/endTime、modelVersion、requestId（幂等键） | F22=code、msg、data.taskId（任务编号）、data.submitTime | G22=异步（立即返回 taskId） | H22=AI平台-3 多模态AI协同分析；AI平台-9 预测运行管理 | I22=requestId 作为幂等键，重复提交返回同一 taskId；同步仅返回受理结果
+A23=7 | B23=预测任务状态与结果回调查询 | C23=/api/aiwater/v1/prediction/task/status | D23=POST + application/json | E23=taskId（必填） | F23=code、msg、data.taskId、status（排队/运行/成功/失败）、progress、errorMsg、resultUrl 或 resultList | G23=异步（轮询/回调） | H23=AI平台-9 预测运行管理；AI平台-3 多模态AI协同分析 | I23=轮询建议 5s 起、退避至 30s；同时提供 callbackUrl 回调推送，二者取先到
+A24=8 | B24=积水事件全生命周期记录查询 | C24=/api/aiwater/v1/waterlogging/event/lifecycle | D24=POST + application/json | E24=eventId（事件编号）、pointCode、beginTime、endTime、stage（发现/复核/核销）、pageNo、pageSize | F24=code、msg、data.total、data.list[].eventId、pointCode、stage、operator、operateTime、conclusion、evidenceUrls | G24=同步 | H24=预警功能配置-5 分级告警与信息关联；预警功能配置-6 规则维护与运行追溯 | I24=按「发现—复核—核销」串联全流程记录；evidenceUrls 关联抓图/录像地址
+A25=9 | B25=积水事件接收 | C25=/api/aiwater/v1/event/receive | D25=POST + application/json | E25=eventId（事件编号）、pointCode（点位编号）、stage（事件阶段：发现/复核/核销）、operator（操作人）、operateTime（ISO8601 带时区或 Unix 秒）、conclusion（处置结论）、evidenceUrls（佐证地址列表）、rainScene（雨情场景）；请求头携带事件签名 | F25=code、msg、data.accepted（受理条数）、data.duplicate（重复推送条数）、data.signatureVerified（验签结果）、data.eventIds（事件编号列表）、data.receivedAt（接收时刻） | G25=同步（基础平台回推） | H25=预警功能配置-5 分级告警与信息关联；预警功能配置-6 规则维护与运行追溯 | I25=同一 eventId 与 stage 只受理一次；受理成败均返 HTTP 200，原因在响应体内回传
+A26=三、接口集成约定
+A27=序号 | B27=约定项 | C27=约定内容
+A28=1 | B28=统一鉴权方式 | C28=统一采用 Token 鉴权：调用方通过平台应用认证接口获取 accessToken（有效期建议 30min，支持刷新），后续请求在请求头 Authorization: Bearer {accessToken} 中携带；Token 失效返回 401，由客户端自动刷新并重放一次。外网/跨网域调用须走 HTTPS（TLS1.2 及以上）。
+A29=2 | B29=统一响应码规范 | C29=全部接口统一响应包 {code, msg, data}。code=0 表示成功；code≠0 为业务异常，data 一般为空或不含业务字段。约定：0 成功；400 参数错误；401 未认证/Token 失效；403 无权限；404 资源不存在；429 请求过于频繁（限流）；500 服务内部错误；503 服务不可用。超时与网络异常由调用方按重试策略处理。
+A30=3 | B30=分页规范 | C30=统一使用 pageNo（从 1 开始）与 pageSize 参数；pageSize 默认 20，最大 1000，超过 1000 按 1000 处理。响应 data 结构为 {total（总条数）, pageNo, pageSize, list[]}；批量拉取须循环至已取条数≥total 或 list 为空为止。禁止无条件下全量拉取，须带时间/区域等过滤条件。
+A31=4 | B31=时间格式 | C31=统一采用 ISO 8601 带时区格式：yyyy-MM-ddTHH:mm:ss+08:00；仅日期场景使用 yyyy-MM-dd。入参 beginTime 与 endTime 为左闭右开区间，单次查询跨度建议≤7天（历史监测数据）；服务端与客户端均按 Asia/Shanghai 时区解析，禁止使用本地时间戳互传。
+A32=5 | B32=异步任务规范 | C32=耗时长或算力型操作（如预测任务提交、模型训练）采用「提交—查询」异步模式：提交接口同步返回 taskId，随后通过两种方式获取结果——①轮询 taskId 状态（建议 5s 起，指数退避至 30s，超时上限 30min）；②提供 callbackUrl 由平台主动回调推送。两者结果一致时以先到者为准，回调须验签并幂等去重。
+A33=6 | B33=幂等与重试 | C33=GET 语义的查询类接口天然幂等，可安全重试（建议重试 2～3 次，间隔 1s/3s/10s 指数退避）；写类接口须由调用方传入 requestId 或业务唯一键作为幂等键，服务端保证同一幂等键在有效期内只处理一次并返回相同结果。超时后禁止盲目重提，应先查询业务状态再决定。事件订阅类接口超时后须先查询订阅状态。
+A34=7 | B34=日志与链路追踪 | C34=所有接口须在请求头携带 X-Request-Id（全局唯一，UUID）与 X-Trace-Id（链路追踪 ID）；服务端日志记录请求方 IP、接口地址、入参摘要、响应码、耗时与 Request-Id，日志留存不少于 6 个月。跨服务调用透传 Trace-Id，支持按 Request-Id 全链路检索与问题定位；敏感字段（如 Token、身份证号）须脱敏打印。
+A35=8 | B35=数据字典统一管理 | C35=设备类型、监测项标识、报警类型、雨情场景（晴天/小雨/中雨/强降雨）、风险等级（高/中/低）、区域层级、事件状态等枚举统一由平台数据字典服务管理，通过字典查询接口获取，禁止在各系统内硬编码。新增字典项须走变更流程并保留版本，字典变更需向下兼容。
+A36=9 | B36=事件类型号段申请 | C36=事件订阅所需的事件类型（eventTypes）须向基础平台统一申请号段，按业务域划分：如 1xxx 视频类、2xxx 设备告警类、3xxx 监测越限类、9xxx 内涝预警与积水事件类。申请须提交事件名称、类型编码、报文字段结构与回调地址，经平台评审后分配；号段一经分配不得跨业务复用，废弃类型须保留登记。
+A37=10 | B37=接口版本与兼容 | C37=接口路径统一带版本号（如 /v1/），版本升级遵循向后兼容原则：新增字段不影响既有调用方，删除或语义变更须发布新版本并给出不少于 3 个月的并行过渡期；调用方须忽略未知字段，避免因平台新增字段导致解析失败。
+A38=11 | B38=安全与合规 | C38=接口仅在内网/专网范围内开放，跨网域须经单向光闸或数据交换通道；按调用方分配应用凭证与最小权限，敏感数据出域须脱敏并留审计记录；对外服务接口（表二）须配置限流（如单应用 100 QPS）与黑白名单，防止恶意刷取。
+A39=12 | B39=联调与验收 | C39=接口交付须提供完整的 OpenAPI 3.0 文档、错误码清单与测试环境；联调前完成连通性与鉴权验证，联调覆盖正常流程、边界值、异常与超时场景；上线前进行压测（按峰值调用频率 1.5 倍），验收以接口成功率≥99.9%、P95 响应时间满足超时建议为准。
+A40=13 | B40=时间基准标注 | C40=响应中凡含时间戳的字段，须同时返回 timeBasis（时间基准标识，simulated 仿真时钟、real 真实时钟）、issuedAt（业务时间戳）、wallClock（真实墙钟）；issuedAt 参与业务计算，wallClock 对齐真实时间轴。仿真时钟时段 timeBasis 取 simulated，仿真时间戳不得写入基础平台业务时间字段。
+A41=14 | B41=风险等级映射 | C41=平台内部预警等级为四级（blue/yellow/orange/red），对外服务接口统一按三级（high/medium/low）输出，映射关系为 blue→low、yellow→medium、orange/red→high；响应中同时返回映射前的原始四级字段，供调用方按需取用。
+A42=15 | B42=预测结果幂等写入 | C42=预测结果以「点位 + 时段 + 模型版本」为幂等键（与表五 R-06 一致），同一幂等键的重复写入只生效一次并返回首次写入结果；幂等键不得掺入发布时刻，否则同一份修正每轮生成新键。修正前后的预测值须同时保留，供预测值与实测值对照分析。
+A43=16 | B43=入站事件回调 | C43=约定 1 的 Token 鉴权对 A-9 入站回调为例外：接收端点不要求携带平台 Token，改以共享密钥对请求体做 HMAC-SHA256 签名并在请求头传递，密钥由部署环境注入、不落库不入版本库；验签失败的事件不予受理，但仍返回 HTTP 200 并在响应体中说明失败原因。同一 eventId 与 stage 的重复推送按幂等处理，第二次起不重复写入、不重复告警。
+A44=四、ICM 接口路径全集登记（源自《Infovision iCM 智慧城管平台 V3.0.0》，去重后全部真实路径）
+A45=复用编号 | B45=ICM 接口路径 | C45=说明 | D45=前缀
+B46=/api/api/resource/v1/device/getDeviceByUnitIndexCodeWithPage | C46=原文路径前缀重复（/api/api/...），疑为文档笔误，联调需确认 | D46=api
+B47=/api/bmunicipal/v1/artemis/device/data/cmd/send | C47=市政设备：指令下发与按编号查询 | D47=bmunicipal
+B48=/api/bmunicipal/v1/artemis/device/findByDeviceNumber | C48=市政设备：指令下发与按编号查询 | D48=bmunicipal
+A49=R16 | B49=/api/cisrm/v1/device/alarmTypes | C49=基础设施服务：设备台账、监测数据、运行状态、报警类型与配置、设施 | D49=cisrm
+A50=R22 | B50=/api/cisrm/v1/device/deviceOnlineStatistics | C50=基础设施服务：设备台账、监测数据、运行状态、报警类型与配置、设施 | D50=cisrm
+A51=R3 | B51=/api/cisrm/v1/device/findByParams | C51=基础设施服务：设备台账、监测数据、运行状态、报警类型与配置、设施 | D51=cisrm
+A52=R18 | B52=/api/cisrm/v1/device/queryAlarmConfig | C52=基础设施服务：设备台账、监测数据、运行状态、报警类型与配置、设施 | D52=cisrm
+A53=R2 | B53=/api/cisrm/v1/device/queryHistoryDataByPage | C53=基础设施服务：设备台账、监测数据、运行状态、报警类型与配置、设施 | D53=cisrm
+A54=R1 | B54=/api/cisrm/v1/device/queryRealtimeDataByPage | C54=基础设施服务：设备台账、监测数据、运行状态、报警类型与配置、设施 | D54=cisrm
+A55=R4 | B55=/api/cisrm/v1/device/queryRunningStatus | C55=基础设施服务：设备台账、监测数据、运行状态、报警类型与配置、设施 | D55=cisrm
+A56=R17 | B56=/api/cisrm/v1/device/types | C56=基础设施服务：设备台账、监测数据、运行状态、报警类型与配置、设施 | D56=cisrm
+A57=R25 | B57=/api/cisrm/v1/facilities/data | C57=基础设施服务：设备台账、监测数据、运行状态、报警类型与配置、设施 | D57=cisrm
+A58=R21 | B58=/api/cisrm/v1/facilities/findAlarmByParams | C58=基础设施服务：设备台账、监测数据、运行状态、报警类型与配置、设施 | D58=cisrm
+A59=R25 | B59=/api/cisrm/v1/facilities/types | C59=基础设施服务：设备台账、监测数据、运行状态、报警类型与配置、设施 | D59=cisrm
+A60=R14 | B60=/api/common/v1/dictionary/getByTypeCodeAndDataValue | C60=数据字典：按 typeCode 查询字典项 | D60=common
+A61=R13 | B61=/api/common/v1/dictionary/getFirstLayerByTypeCode | C61=数据字典：按 typeCode 查询字典项 | D61=common
+A62=R12 | B62=/api/eventService/v1/eventSubscriptionByEventTypes | C62=事件服务：按事件类型订阅、订阅状态查询 | D62=eventService
+A63=R15 | B63=/api/eventService/v1/eventSubscriptionView | C63=事件服务：按事件类型订阅、订阅状态查询 | D63=eventService
+A64=R23 | B64=/api/nms/v1/record/list | C64=网管：视频质量诊断、录像检索 | D64=nms
+A65=R11 | B65=/api/nms/v1/vqd/list | C65=网管：视频质量诊断、录像检索 | D65=nms
+B66=/api/pems/v1/alarm_in/search | C66=动环与传感：阈值配置、历史数据、统计 | D66=pems
+B67=/api/pems/v1/monitor/pemsIoOut/control | C67=动环与传感：阈值配置、历史数据、统计 | D67=pems
+B68=/api/pems/v1/monitor/pemsIoOut/state | C68=动环与传感：阈值配置、历史数据、统计 | D68=pems
+B69=/api/pems/v1/monitor/search | C69=动环与传感：阈值配置、历史数据、统计 | D69=pems
+A70=R20 | B70=/api/pems/v1/public/monitor/getThresholdList | C70=动环与传感：阈值配置、历史数据、统计 | D70=pems
+B71=/api/pems/v1/public/monitor/history/latestValue | C71=动环与传感：阈值配置、历史数据、统计 | D71=pems
+B72=/api/pems/v1/public/monitor/history/statistics | C72=动环与传感：阈值配置、历史数据、统计 | D72=pems
+B73=/api/pems/v1/public/monitor/history/statistics/batch | C73=动环与传感：阈值配置、历史数据、统计 | D73=pems
+B74=/api/pems/v1/public/monitor/sensor/types | C74=动环与传感：阈值配置、历史数据、统计 | D74=pems
+A75=R19 | B75=/api/pems/v1/public/sensor/threshold | C75=动环与传感：阈值配置、历史数据、统计 | D75=pems
+B76=/api/pems/v1/sensor/search | C76=动环与传感：阈值配置、历史数据、统计 | D76=pems
+B77=/api/pems/v2/monitor/pemsIoOut/control | C77=动环与传感：阈值配置、历史数据、统计 | D77=pems
+B78=/api/pems/v2/monitor/pemsIoOut/state | C78=动环与传感：阈值配置、历史数据、统计 | D78=pems
+B79=/api/pems/v3/public/sensor/history-data | C79=动环与传感：阈值配置、历史数据、统计 | D79=pems
+A80=R8 | B80=/api/resource/v1/camera/getCamerasBySpatialIndexWithPage | C80=资源目录：区域树、监控点、编码设备、组织与卡口 | D80=resource
+B81=/api/resource/v1/camera/modifyCameraOperationResource | C81=资源目录：区域树、监控点、编码设备、组织与卡口 | D81=resource
+A82=R7 | B82=/api/resource/v1/cameras | C82=资源目录：区域树、监控点、编码设备、组织与卡口 | D82=resource
+B83=/api/resource/v1/cameras/indexCode | C83=资源目录：区域树、监控点、编码设备、组织与卡口 | D83=resource
+B84=/api/resource/v1/crossing/getCrossingByCrossingIndexCode | C84=资源目录：区域树、监控点、编码设备、组织与卡口 | D84=resource
+B85=/api/resource/v1/crossing/getCrossingsBySpatialIndexWithPage | C85=资源目录：区域树、监控点、编码设备、组织与卡口 | D85=resource
+B86=/api/resource/v1/crossing/getCrossingsByUnitIndexCodeWithPage | C86=资源目录：区域树、监控点、编码设备、组织与卡口 | D86=resource
+B87=/api/resource/v1/crossing/getCrossingsWithPage | C87=资源目录：区域树、监控点、编码设备、组织与卡口 | D87=resource
+B88=/api/resource/v1/crossing/getLanesByCrossingIndexCodes | C88=资源目录：区域树、监控点、编码设备、组织与卡口 | D88=resource
+B89=/api/resource/v1/crossing/modifyCrossOperationResource | C89=资源目录：区域树、监控点、编码设备、组织与卡口 | D89=resource
+B90=/api/resource/v1/device/getDeviceByIndexCode | C90=资源目录：区域树、监控点、编码设备、组织与卡口 | D90=resource
+B91=/api/resource/v1/device/getDeviceWithPage | C91=资源目录：区域树、监控点、编码设备、组织与卡口 | D91=resource
+A92=R5 | B92=/api/resource/v1/regions | C92=资源目录：区域树、监控点、编码设备、组织与卡口 | D92=resource
+B93=/api/resource/v1/regions/regionIndexCode/cameras | C93=资源目录：区域树、监控点、编码设备、组织与卡口 | D93=resource
+A94=R6 | B94=/api/resource/v1/regions/subRegions | C94=资源目录：区域树、监控点、编码设备、组织与卡口 | D94=resource
+B95=/api/resource/v1/unit/getChildUnitsWithCameraByUnitIndexCode | C95=资源目录：区域树、监控点、编码设备、组织与卡口 | D95=resource
+B96=/api/resource/v3/crossing/getLaneDetailsByLaneIndexCode | C96=资源目录：区域树、监控点、编码设备、组织与卡口 | D96=resource
+B97=/api/tvms/v1/public/tvwall/alarm/addition | C97=电视墙：场景/窗口/上墙/轮巡（本项目不复用，仅登记） | D97=tvms
+B98=/api/tvms/v1/public/tvwall/alarm/deletion | C98=电视墙：场景/窗口/上墙/轮巡（本项目不复用，仅登记） | D98=tvms
+B99=/api/tvms/v1/public/tvwall/floatWnd/division | C99=电视墙：场景/窗口/上墙/轮巡（本项目不复用，仅登记） | D99=tvms
+B100=/api/tvms/v1/public/tvwall/floatWnd/layerCtrl | C100=电视墙：场景/窗口/上墙/轮巡（本项目不复用，仅登记） | D100=tvms
+B101=/api/tvms/v1/public/tvwall/floatWnd/move | C101=电视墙：场景/窗口/上墙/轮巡（本项目不复用，仅登记） | D101=tvms
+B102=/api/tvms/v1/public/tvwall/floatWnd/zoomIn | C102=电视墙：场景/窗口/上墙/轮巡（本项目不复用，仅登记） | D102=tvms
+B103=/api/tvms/v1/public/tvwall/floatWnd/zoomOut | C103=电视墙：场景/窗口/上墙/轮巡（本项目不复用，仅登记） | D103=tvms
+B104=/api/tvms/v1/public/tvwall/floatWnds/addition | C104=电视墙：场景/窗口/上墙/轮巡（本项目不复用，仅登记） | D104=tvms
+B105=/api/tvms/v1/public/tvwall/floatWnds/deletion | C105=电视墙：场景/窗口/上墙/轮巡（本项目不复用，仅登记） | D105=tvms
+B106=/api/tvms/v1/public/tvwall/monitor/division | C106=电视墙：场景/窗口/上墙/轮巡（本项目不复用，仅登记） | D106=tvms
+B107=/api/tvms/v1/public/tvwall/scene/addition | C107=电视墙：场景/窗口/上墙/轮巡（本项目不复用，仅登记） | D107=tvms
+B108=/api/tvms/v1/public/tvwall/scene/deletion | C108=电视墙：场景/窗口/上墙/轮巡（本项目不复用，仅登记） | D108=tvms
+B109=/api/tvms/v1/public/tvwall/scene/update | C109=电视墙：场景/窗口/上墙/轮巡（本项目不复用，仅登记） | D109=tvms
+B110=/api/tvms/v1/tvwall/allResources | C110=电视墙：场景/窗口/上墙/轮巡（本项目不复用，仅登记） | D110=tvms
+B111=/api/tvms/v1/tvwall/realplay/add | C111=电视墙：场景/窗口/上墙/轮巡（本项目不复用，仅登记） | D111=tvms
+B112=/api/tvms/v1/tvwall/realplay/delete | C112=电视墙：场景/窗口/上墙/轮巡（本项目不复用，仅登记） | D112=tvms
+B113=/api/tvms/v1/tvwall/scene/switch | C113=电视墙：场景/窗口/上墙/轮巡（本项目不复用，仅登记） | D113=tvms
+B114=/api/tvms/v1/tvwall/scenes | C114=电视墙：场景/窗口/上墙/轮巡（本项目不复用，仅登记） | D114=tvms
+B115=/api/tvms/v1/tvwall/wnds/get | C115=电视墙：场景/窗口/上墙/轮巡（本项目不复用，仅登记） | D115=tvms
+B116=/api/v1/application/citycasehandle-ptl/service/rs/ptl/v1/deletePtlObjs | C116=无二级前缀的顶层业务域 | D116=v1
+B117=/api/v1/application/citycasehandle-ptl/service/rs/ptl/v1/queryPtlObjByPage | C117=无二级前缀的顶层业务域 | D117=v1
+B118=/api/v1/application/citycasehandle-ptl/service/rs/ptl/v1/queryPtlPlanByPage | C118=无二级前缀的顶层业务域 | D118=v1
+B119=/api/v1/application/citycasehandle-ptl/service/rs/ptl/v1/queryPtlPlanDetail | C119=无二级前缀的顶层业务域 | D119=v1
+B120=/api/v1/application/citycasehandle-ptl/service/rs/ptl/v1/queryPtlResultByPage | C120=无二级前缀的顶层业务域 | D120=v1
+B121=/api/v1/application/citycasehandle-ptl/service/rs/ptl/v1/queryPtlTaskByPage | C121=无二级前缀的顶层业务域 | D121=v1
+B122=/api/v1/application/citycasehandle-ptl/service/rs/ptl/v1/queryPtlTaskDetail | C122=无二级前缀的顶层业务域 | D122=v1
+A123=R26 | B123=/api/v1/application/citycasehandle/service/rs/case/v1/query | C123=无二级前缀的顶层业务域 | D123=v1
+B124=/api/v1/application/citycasehandle/service/rs/case/v1/statistics/baseInfo/count | C124=无二级前缀的顶层业务域 | D124=v1
+B125=/api/v1/drrm/riskAlarm/findPage | C125=无二级前缀的顶层业务域 | D125=v1
+A126=R24 | B126=/api/v1/drrm/riskAlarm/issue | C126=无二级前缀的顶层业务域 | D126=v1
+B127=/api/v1/drrm/riskType/findPage | C127=无二级前缀的顶层业务域 | D127=v1
+A128=R10 | B128=/api/video/v1/cameras/playbackURLs | C128=视频服务：预览/回放取流、云台控制、预置位 | D128=video
+A129=R9 | B129=/api/video/v1/cameras/previewURLs | C129=视频服务：预览/回放取流、云台控制、预置位 | D129=video
+B130=/api/video/v1/presets/addition | C130=视频服务：预览/回放取流、云台控制、预置位 | D130=video
+B131=/api/video/v1/presets/searches | C131=视频服务：预览/回放取流、云台控制、预置位 | D131=video
+B132=/api/video/v1/ptzs/controlling | C132=视频服务：预览/回放取流、云台控制、预置位 | D132=video
+B133=/api/video/v1/ptzs/selZoom | C133=视频服务：预览/回放取流、云台控制、预置位 | D133=video
+B134=/api/video/v3/cameras/talkURLs | C134=视频服务：预览/回放取流、云台控制、预置位 | D134=video
+A135=五、待确认事项与风险登记（不设开放问题等待回复：不回复即按「默认假设」推进，并在此登记）
+A136=类型 | B136=编号 | C136=事项 | D136=影响 | E136=默认假设 / 对策 | F136=状态
+A137=待确认 | B137=Q1 | C137=ICM 文档未提供应用认证 / Token 获取接口（全文无 auth/token 类地址） | D137=所有出站调用无法鉴权，联调无法发起 | E137=网关预留鉴权插件位（可注入现成 token），由基础平台补充认证方式与凭据；不写死任何凭据 | F137=待基础平台确认
+A138=待确认 | B138=Q2 | C138=「获取所有树编码」在 ICM 文档中只有标题、无接口地址 | D138=R5/R7/R8 的 treeCode 取值无权威来源 | E138=使用 treeCode="0"（国标树）先行联调，正式树编码待补充 | F138=待基础平台确认
+A139=待确认 | B139=Q3 | C139=事件类型号段、附录D 事件列表、事件回调报文格式未随文档提供 | D139=R12 订阅与 A-9 接收端无法联调 | E139=按基础文档建议申请 9xxx 号段（内涝预警与积水事件类）；回调按通用事件报文解析，接收端先做字段透传。A-9 接收端接受单对象、数组及 {list,events,data} 包装三种报文，按约定字段落库，未约定字段不入库 | F139=待基础平台确认
+A140=待确认 | B140=Q4 | C140=《对外数据字典项.xlsx》未提供，typeCode 明细未知 | D140=约定8 字典统一管理无法落地具体编码 | E140=复用 R13/R14 按 typeCode 查询；雨情场景与风险等级作为新增字典项走变更流程 | F140=待基础平台确认
+A141=待确认 | B141=Q5 | C141=R24 风险告警上报、R26 工单/案件的写权限与报文字段未明确 | D141=8-5 判定结果回传、A-8 全生命周期无法打通 | E141=先在测试环境验证；写操作默认由 feature flag 关闭，不主动发起 | F141=待基础平台确认
+A142=待确认 | B142=Q6 | C142=跨网域边界（政务外网 / 视频专网）与数据出域合规要求未明确 | D142=9-1 多源融合、10-6 大模型接入的实施路径不确定 | E142=按基础文档建议：单向光闸 + 数据交换通道；大模型优先私有化部署 | F142=待基础平台确认
+A143=待确认 | B143=Q7 | C143=测试环境地址、凭据、联调窗口与责任人未提供 | D143=全部 12 条复用接口只能停留在契约设计态 | E143=本期交付接口契约 + 客户端代码 + 单测；真实联调待环境就绪后立即执行 | F143=待基础平台确认
+A144=待确认 | B144=Q8 | C144=ICM 平台是否会发布新版接口文档（V3.0.0 之后） | D144=本表所有字段口径可能需要重新核对 | E144=以当前 V3.0.0 为准；若 ICM 平台发布新版，按「ICM原件字段核对表」逐条重新核对并升版本号 | F144=持续跟踪
+A145=风险登记 | B145=R-01 | C145=复用接口字段名偏差导致联调失败（12 条中 9 条字段名与原件不符） | D145=高 | E145=已逐条修正并写入「ICM原件字段核对表」；联调前先做 R1 / R3 / R5 三条连通性与字段验证 | F145=已缓解，待联调验证
+A146=风险登记 | B146=R-02 | C146=code 类型不统一（多数接口为字符串 "0"，个别为数字 0） | D146=中 | E146=网关按字符串归一化比较；严禁仅凭 HTTP 200 判成功 | F146=已缓解（客户端已实现）
+A147=风险登记 | B147=R-03 | C147=仿真时钟被当成真实时间外发给基础平台 | D147=高 | E147=统一标注 timeBasis="simulated"，禁止仿真时间写入基础平台报警时间字段（约定13） | F147=已缓解（客户端已实现）
+A148=风险登记 | B148=R-04 | C148=取流 URL 与瓦片资源跨网不可达 | D148=中 | E148=R9/R10 保留离线降级；取流 URL 不落库长期缓存，过期重取 | F148=待环境验证
+A149=风险登记 | B149=R-05 | C149=视频样本大批量下载的带宽与存储成本 | D149=中 | E149=离线批量导出 + 去重抽样；本接口只管样本元数据，文件本体留在源端 | F149=待方案细化
+A150=风险登记 | B150=R-06 | C150=并发预测结果相互覆盖 | D150=中 | E150=「点位 + 时段 + 版本号」幂等写入 + revision/correctionId 保留修正轨迹 | F150=已缓解（契约已定义）
+A151=风险登记 | B151=R-07 | C151=在线大模型调用导致数据出域 | D151=高 | E151=私有化部署优先 + 敏感字段脱敏 + 访问控制 + 审计；本表不构成合规审查结论 | F151=待方案细化
+A152=风险登记 | B152=R-08 | C152=基础平台接口无时间范围入参（R11 视频质量诊断）导致查询预期落空 | D152=低 | E152=改为取最近一次巡检结果，按巡检日巡检；不按时间窗回溯 | F152=已识别
+A153=待确认 | B153=Q9 | C153=自研接口网关的对外访问地址与部署形态未确定 | D153=A-1~A-9 无法被基础平台从外部真实调用 | E153=随主服务同端口部署于 /api/aiwater/v1 前缀下，令牌与验签密钥通过环境变量注入 | F153=待基础平台确认
+A154=风险登记 | B154=R-09 | C154=基础平台回推事件的鉴权与验签方式未确定 | D154=高 | E154=按约定 16 的共享密钥 HMAC-SHA256 实现，密钥经环境变量注入；对外暴露前须完成密钥下发与验签链路联调 | F154=待方案细化
+A155=风险登记 | B155=R-10 | C155=对外三级风险等级与平台内部四级预警等级的映射未获基础平台确认 | D155=高 | E155=按约定 14 的映射关系输出并同时保留原始四级字段，待基础平台确认后调整映射表 | F155=待方案细化

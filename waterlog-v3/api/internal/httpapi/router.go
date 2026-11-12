@@ -54,6 +54,7 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/overview", s.overview)
 			r.Get("/sites/{id}", s.siteDetail)
 			r.Get("/sites/{id}/history", s.siteHistory)
+			r.Get("/history", s.allHistory)
 			r.Get("/forecast", s.getForecast)
 			r.Get("/alerts", s.listAlerts)
 			r.Get("/alerts/{id}", s.alertDetail)

@@ -17,11 +17,8 @@ import {
 } from '../domain'
 import {
   useAlerts,
-  useAudit,
-  useDeliveries,
-  useHealth,
+  useAllHistory,
   useForecast,
-  useModelVersions,
   useOverview,
   useSiteDetail,
   useSites,
@@ -46,16 +43,28 @@ import {
   type WidgetId,
 } from './layout'
 import { SCENES, SceneProvider } from './scene'
-import { UNKNOWN_ENGINE, type SystemHealth } from '../domain'
 import { useSceneRotation } from './useRotation'
-import { DistrictBoard } from './DistrictBoard'
-import { AuditFeed, DeliveryPanel, LatencyPanel, QualityPanel, VersionTrack } from './PlatformPanels'
+import { ZoneCellView, sharedDomain, type ZoneCell, type ZoneSeries } from './ZoneGrid'
+import {
+  Confidence,
+  DistrictCompare,
+  Heatmap,
+  RiskQuadrant,
+  type HeatCell,
+  TrendOutlook,
+  projectTrend,
+  type ConfidenceRow,
+  type DistrictCompareRow,
+  type HeatRow,
+  type RiskPoint,
+  type TrendPoint,
+} from './AnalysisBoard'
 
 /**
  * 大厅大屏 —— 三屏轮播，无人交互。
  *
- * 三屏各讲一件事：**全域总览**（11 块，值班常驻）、**地图分区**（8 块，
- * 看哪个辖区最紧张）、**图表分析**（7 块，看模型靠不靠得住）。
+ * 三屏各讲一件事：**全域总览**（11 块，值班常驻）、**辖区预测**（6 格，
+ * 看哪个区最先翻红）、**全域研判**（7 块，看这波往哪走）。
  * 每屏内部按「KPI 条 → 主图 → 明细」三层组织，不是把组件平铺成等大方块。
  * 切屏用整层叠化，不是新开路由 —— 大屏没有导航，观众不会去点。
  *
@@ -86,17 +95,10 @@ const SIGNAL_LABEL: Record<string, string> = {
   headroom_blue: '距蓝阈',
 }
 
-/** 健康接口拿不到时的兜底：显示「掉线」，而不是把空白当成正常。 */
-const OFFLINE_HEALTH: SystemHealth = {
-  apiOk: false,
-  service: '—',
-  engineOk: false,
-  engine: UNKNOWN_ENGINE,
-  clients: 0,
-  now: 0 as SimTime,
-}
-
 const STATION_MS = 9000
+
+/** 热力图的列数：过去 6 小时 + 未来 6 小时，每小时一格。 */
+const HEAT_COLS = 12
 const W = 1920
 const H0 = 1080
 
@@ -307,7 +309,7 @@ export default function BoardPage() {
   const sceneKey = scene.key
 
   // 「此刻态势」有四层内容（两大数 / 最深处与距阈 / 退涨指示 / 底部两大数），
-  // 实测需要 142px。地图分区屏为了把高度让给地图，只给它 120px，
+  // 实测需要 142px。某些屏为了把高度让给主图，只给它 120px，
   // 于是底部两大数被裁掉（measure-overflow 报溢出 58px）。
   // 不看场景名、只看实际分配到的矩形高度：用户在布局模式里把面板拖高之后，
   // 内容应当自己长回来，而不是因为"它是地图屏"就永远少一行。
@@ -333,14 +335,15 @@ export default function BoardPage() {
     return () => window.removeEventListener('resize', apply)
   }, [])
 
-  // 「平台运行」屏的数据源：全部是运行记录而不是监测值。
-  const health = useHealth()
-  const audit = useAudit(24)
-  const deliveries = useDeliveries(60)
-  const versions = useModelVersions()
+  // 平台运维类面板已从大屏撤掉（它们在管理页里更合适），
+  // 对应的 useHealth/useAudit/useDeliveries/useModelVersions 一并停止调用 ——
+  // 没人看的数据每几秒拉一次是纯浪费。
 
   const overview = useOverview()
   const forecast = useForecast()
+  // 十站过去 12 小时的真实历史，一次请求取回。热力图左半段和全域趋势都靠它 ——
+  // 早先用「当前等级」填满过去六列，图形看着是满的，实际没有信息。
+  const allHistory = useAllHistory(12)
   const alerts = useAlerts(false)
   // 0.2 而不是 0.34：倾斜铺满后整体放大约 1.9 倍，0.34 的气泡直径近 90px，
   // 把街区和相邻站点全压住了。地图上的气泡应当是「标记」，不是数据图形。
@@ -420,6 +423,302 @@ export default function BoardPage() {
       .sort((a, b) => Number(b.sf.assessment.peakValue) - Number(a.sf.assessment.peakValue))
       .slice(0, 10)
   }, [forecast.data, list])
+
+  // ---------------------------------------------------------------- 辖区预测格
+  /**
+   * 「辖区预测」屏的六格：五个街道各一格 + 一格「全域合计」。
+   *
+   * 六格共用一条纵轴（由 sharedDomain 负责），否则「东城看着比西城高」
+   * 可能只是两格的刻度不同——那是彻底的误读。
+   *
+   * 曲线点取自 `forecast.sites[id].curve`，是引擎发布的完整 5 分钟粒度曲线，
+   * 不是四个预见期插值出来的：插值会抹平拐点，而「最先穿红」恰好发生在拐点上。
+   */
+  const zoneCells = useMemo<ZoneCell[]>(() => {
+    const fc = forecast.data
+    if (!fc) return []
+
+    const byDistrict = new Map<string, OverviewRow[]>()
+    for (const r of list) {
+      const key = r.site.district || '未分区'
+      const arr = byDistrict.get(key) ?? []
+      arr.push(r)
+      byDistrict.set(key, arr)
+    }
+
+    const build = (district: string, members: readonly OverviewRow[]): ZoneCell => {
+      const zseries: ZoneSeries[] = []
+      let peak: ZoneCell['peak'] = null
+      let crossRed: number | null = null
+      let topLevel: Level = 'none'
+      let maxDepth = 0
+      const thr0 = members[0]?.site.thresholds
+      const thr = {
+        blue: Number(thr0?.blue ?? 0.15),
+        yellow: Number(thr0?.yellow ?? 0.25),
+        orange: Number(thr0?.orange ?? 0.35),
+        red: Number(thr0?.red ?? 0.45),
+      }
+
+      for (const m of members) {
+        const sf = fc.sites[m.site.id]
+        const base = Number(m.site.baseLevel)
+        const pts = sf ? sf.curve.map((c) => ({ offsetMin: c.offsetMin, level: Number(c.level) - base })) : []
+        if (pts.length >= 2) {
+          zseries.push({
+            siteId: m.site.id,
+            name: m.site.name,
+            district,
+            level: m.assessment.level,
+            now: Number(m.reading.depth),
+            points: pts,
+          })
+          for (const pt of pts) {
+            if (!peak || pt.level > peak.level) peak = { level: pt.level, atMin: pt.offsetMin, name: m.site.name }
+          }
+          // 「穿红」用该站自己的红阈：拿辖区最紧张那个站的红阈去衡量别的站是错的。
+          // 阈值的量纲是「相对基准的积水深」，和 pts 里的 level 同量纲 ——
+          // 早先这里多减了一次 base（写成 thresholds.red - base），得到负数，
+          // 于是每个点都「已穿红」、徽标永远显示「此刻后穿红」。
+          const red = Number(m.site.thresholds.red)
+          const hit = pts.find((pt) => pt.level >= red)
+          if (hit && (crossRed == null || hit.offsetMin < crossRed)) crossRed = hit.offsetMin
+        }
+        if (LEVEL_RANK[m.assessment.level] > LEVEL_RANK[topLevel]) topLevel = m.assessment.level
+        maxDepth = Math.max(maxDepth, Number(m.reading.depth))
+      }
+
+      return { district, series: zseries, topLevel, maxDepth, peak, crossRedAtMin: crossRed, thresholds: thr }
+    }
+
+    const cells = Array.from(byDistrict.entries())
+      .map(([d, ms]) => build(d, ms))
+      .filter((c) => c.series.length > 0)
+      .sort((a, b) => LEVEL_RANK[b.topLevel] - LEVEL_RANK[a.topLevel] || b.maxDepth - a.maxDepth)
+
+    // 最后一格：全域合计。把十站的「水位减基准」加起来，得到全城累计积水深。
+    // 它回答的是「这波是面上的雨还是点上的雨」——十站各自一格时看不出来。
+    if (cells.length > 0 && cells.length < 6) {
+      const sumPts = new Map<number, number>()
+      for (const r of list) {
+        const sf = fc.sites[r.site.id]
+        if (!sf) continue
+        const base = Number(r.site.baseLevel)
+        for (const c of sf.curve) sumPts.set(c.offsetMin, (sumPts.get(c.offsetMin) ?? 0) + (Number(c.level) - base))
+      }
+      const pts = Array.from(sumPts.entries()).sort((a, b) => a[0] - b[0]).map(([offsetMin, level]) => ({ offsetMin, level }))
+      if (pts.length >= 2) {
+        let pk: ZoneCell['peak'] = null
+        for (const pt of pts) if (!pk || pt.level > pk.level) pk = { level: pt.level, atMin: pt.offsetMin, name: '全域合计' }
+        const sumNow = list.reduce((a, r) => a + Number(r.reading.depth), 0)
+        cells.push({
+          district: '全域合计',
+          series: [{ siteId: '_all', name: '全域合计', district: '全域合计', level: worst, now: sumNow, points: pts }],
+          topLevel: worst,
+          maxDepth: sumNow,
+          peak: pk,
+          crossRedAtMin: null,
+          // 合计值没有单一阈值：把它当成「十站阈值之和」没有业务含义，
+          // 所以这里给一组不可能被触发的值，图上的阈值带自然消失。
+          thresholds: { blue: 99, yellow: 99, orange: 99, red: 99 },
+        })
+      }
+    }
+    return cells.slice(0, 6)
+  }, [forecast.data, list, worst])
+
+  const zoneDomain = useMemo(() => sharedDomain(zoneCells), [zoneCells])
+
+  // ---------------------------------------------------------------- 全域研判
+  /** 风险格局：横轴 1h 变幅、纵轴当前积水深。 */
+  const riskPoints = useMemo<RiskPoint[]>(
+    () =>
+      list.map((r) => ({
+        siteId: r.site.id,
+        name: r.site.name,
+        level: r.assessment.level,
+        depth: Number(r.reading.depth),
+        slope: Number(r.reading.trend1h),
+      })),
+    [list],
+  )
+  /** 象限线画在「蓝色阈值」上：业务上「算不算有事」的那条线，不是中位数。 */
+  const riskBlue = useMemo(() => {
+    const bs = list.map((r) => Number(r.site.thresholds.blue) - Number(r.site.baseLevel))
+    return bs.length ? bs.reduce((a, b) => a + b, 0) / bs.length : 0.15
+  }, [list])
+
+  /**
+   * 热力图：横轴 12 个小时桶（-6h … +5h）、纵轴十个站，格色＝该桶的等级。
+   *
+   * 左边六格用**真实历史**（`/api/history` 批量取回，一次请求拿十站），
+   * 右边六格由预测曲线逐桶折算。早先左半段是拿「当前等级」平铺的，
+   * 图形看着满、实际零信息 —— 那才是最容易被误读的一类假图：
+   * 它让读者以为过去六小时一直是这样，而实际上什么都没测。
+   *
+   * 没有历史（新部署、库还空）时该格留空而不是填当前等级，
+   * 并由页脚说明「历史不足」—— 不知道就说不知道。
+   */
+  const heatRows = useMemo<HeatRow[]>(
+    () =>
+      list.map((r) => {
+        const sf = forecast.data?.sites[r.site.id]
+        const base = Number(r.site.baseLevel)
+        const t = r.site.thresholds
+        // 阈值本身就是「相对基准的积水深」，和下面的 d 同量纲，**不要再减 base**
+        // （减了会得到负数，于是每一格都被判成 red，整张热力图全红）。
+        const ths = [Number(t.blue), Number(t.yellow), Number(t.orange), Number(t.red)]
+        const cls = (d: number): Level =>
+          d >= ths[3] ? 'red' : d >= ths[2] ? 'orange' : d >= ths[1] ? 'yellow' : d >= ths[0] ? 'blue' : 'none'
+        const pts = allHistory.data?.[r.site.id]?.points ?? []
+        // 时间轴以「最新一条遥测」为原点（仿真秒），和预测曲线的 offsetMin 同一把尺子。
+        const lastAt = pts.length ? Number(pts[pts.length - 1].at) : 0
+        const levels: HeatCell[] = []
+        for (let i = 0; i < HEAT_COLS; i++) {
+          // 与 <Heatmap columns> 用同一把尺子：左 6 格是 -6h…-1h，右 6 格是 0…+5h。
+          // 早先这里写成 (i - HEAT_COLS + 1) * 60，得到 -10h…+1h，
+          // 与横轴标签整整错开 4 格，历史点全部匹配不到、整片留白。
+          // 一小时一格，覆盖 -5h…+6h，「现在」落在第 6 格（i=5）。
+          // 与 <Heatmap columns> 的 (i - 5) * 60 必须一致。
+          const offset = (i - 5) * 60
+          if (offset <= 0) {
+            // 过去：取该桶（offset 对应的那一分钟）前后 30 分钟里最近的一条实测。
+            // 一条都没有就留 none —— 不知道就说不知道，不要拿别处的数字顶上。
+            let bestD: number | null = null
+            let bestGap = Infinity
+            if (lastAt) {
+              const want = lastAt + offset * 60
+              for (const p of pts) {
+                const gap = Math.abs(Number(p.at) - want)
+                if (gap <= 30 * 60 && gap < bestGap) {
+                  bestGap = gap
+                  bestD = Number(p.level) - base
+                }
+              }
+            }
+            levels.push(bestD == null ? 'blank' : cls(bestD))
+          } else {
+            // 未来：按预测曲线折算。
+            const pt = sf ? sf.curve.find((c) => c.offsetMin >= offset) : undefined
+            levels.push(pt ? cls(Number(pt.level) - base) : 'blank')
+          }
+        }
+        return { siteId: r.site.id, name: r.site.name, district: r.site.district || '未分区', levels }
+      }),
+    [list, forecast.data, allHistory.data],
+  )
+
+  /**
+   * 全域趋势：合计积水深的时间走势，过去 6h 取真实历史、未来 6h 取预测曲线。
+   *
+   * 早先这里只从预测曲线里取 `offsetMin <= 0` 的点 —— 而曲线是从此刻往前的，
+   * 一个负 offset 都没有，所以数组恒空、面板永远显示「等待历史数据」。
+   * 现在两段拼起来：左边实测、右边预测，中间由 `now` 分界。
+   */
+  const trendHistory = useMemo<TrendPoint[]>(() => {
+    const fc = forecast.data
+    const hist = allHistory.data
+    if (!fc && !hist) return []
+
+    // ---- 过去：把十站的实测序列按时间戳对齐后求和。
+    const pastSums = new Map<number, number>()
+    if (hist) {
+      for (const r of list) {
+        const ser = hist[r.site.id]
+        if (!ser) continue
+        const base = Number(r.site.baseLevel)
+        // 每 30 分钟取一个点，避免十站 × 289 点把横轴压得过密。
+        for (const pt of ser.points) {
+          const bucket = Math.round(Number(pt.at) / 1800) * 1800
+          pastSums.set(bucket, (pastSums.get(bucket) ?? 0) + Math.max(0, Number(pt.level) - base))
+        }
+      }
+    }
+    const pastKeys = Array.from(pastSums.keys()).sort((a, b) => a - b)
+    const lastPast = pastKeys.length ? pastKeys[pastKeys.length - 1] : 0
+    // 只保留最近 6 小时（12 个半小时桶），offsetMin 相对「此刻」为负。
+    const past: TrendPoint[] = pastKeys
+      .slice(-13)
+      .map((k) => ({ offsetMin: lastPast ? (k - lastPast) / 60 : 0, sumDepth: pastSums.get(k) ?? 0 }))
+
+    // ---- 未来：逐站预测曲线求和，同样每 30 分钟一桶。
+    const futureSums = new Map<number, number>()
+    if (fc) {
+      for (const r of list) {
+        const sf = fc.sites[r.site.id]
+        if (!sf) continue
+        const base = Number(r.site.baseLevel)
+        for (const c of sf.curve) {
+          if (c.offsetMin <= 0 || c.offsetMin > 360) continue
+          const bucket = Math.round(c.offsetMin / 30) * 30
+          futureSums.set(bucket, (futureSums.get(bucket) ?? 0) + Math.max(0, Number(c.level) - base))
+        }
+      }
+    }
+    const future: TrendPoint[] = Array.from(futureSums.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([offsetMin, sumDepth]) => ({ offsetMin, sumDepth }))
+
+    return [...past, ...future]
+  }, [forecast.data, allHistory.data, list])
+  const trendOutlook = useMemo(() => projectTrend(trendHistory, 6), [trendHistory])
+
+  /** 可信度：12h 那条预见期的 90% 区间半宽。 */
+  const confidenceRows = useMemo<ConfidenceRow[]>(() => {
+    const fc = forecast.data
+    if (!fc) return []
+    const out: ConfidenceRow[] = []
+    for (const r of list) {
+      const sf = fc.sites[r.site.id]
+      if (!sf || !sf.horizons.length) continue
+      const h = sf.horizons.find((x) => x.horizonMin === 720) ?? sf.horizons[sf.horizons.length - 1]
+      out.push({
+        siteId: r.site.id,
+        name: r.site.name,
+        district: r.site.district || '未分区',
+        level: r.assessment.level,
+        halfWidth: (Number(h.upper) - Number(h.lower)) / 2,
+        fcLevel: Number(h.level),
+      })
+    }
+    return out.sort((a, b) => b.halfWidth - a.halfWidth)
+  }, [forecast.data, list])
+
+  /** 多区对比：每区最深、12h 峰值、超阈占比。 */
+  const districtCompare = useMemo<DistrictCompareRow[]>(() => {
+    const fc = forecast.data
+    const by = new Map<string, OverviewRow[]>()
+    for (const r of list) {
+      const k = r.site.district || '未分区'
+      const arr = by.get(k) ?? []
+      arr.push(r)
+      by.set(k, arr)
+    }
+    const out: DistrictCompareRow[] = []
+    for (const [district, ms] of by.entries()) {
+      let topLevel: Level = 'none'
+      let maxDepth = 0
+      let alarmCount = 0
+      let rain = 0
+      let peak: number | null = null
+      for (const m of ms) {
+        if (LEVEL_RANK[m.assessment.level] > LEVEL_RANK[topLevel]) topLevel = m.assessment.level
+        maxDepth = Math.max(maxDepth, Number(m.reading.depth))
+        if (isAlarm(m.assessment.level)) alarmCount++
+        rain = Math.max(rain, Number(m.reading.rain))
+        const sf = fc?.sites[m.site.id]
+        if (sf) {
+          const base = Number(m.site.baseLevel)
+          for (const c of sf.curve) {
+            const d = Number(c.level) - base
+            peak = peak == null ? d : Math.max(peak, d)
+          }
+        }
+      }
+      out.push({ district, topLevel, maxDepth, alarmCount, siteCount: ms.length, peak, rain })
+    }
+    return out.sort((a, b) => LEVEL_RANK[b.topLevel] - LEVEL_RANK[a.topLevel] || b.maxDepth - a.maxDepth)
+  }, [list, forecast.data])
 
   const series = detail.data?.series ?? null
   const detailFc = detail.data?.forecast ?? null
@@ -2178,49 +2477,48 @@ export default function BoardPage() {
               </Panel>
               </Widget>
 
-              {/* ---------- 辖区看板：地图分区屏的主角 ---------- */}
-              <Widget
-                id="districts"
-                rect={rects.districts}
-                scale={scale}
-                editing={editing}
-                p={p}
-                onChange={setRect}
-                onCommit={() => saveLayout(layoutRef.current)}
-              >
-                <Panel
-                  title="辖区看板"
-                  sub={`${new Set(list.map((r) => r.site.district ?? '未分区')).size} 个辖区 · 此刻积水 / 12h 峰值 / 雨情 / 最紧张站`}
-                  accent={p.level[worst]}
-                >
-                  <DistrictBoard
-                    rows={list.map((r) => {
-                      // 12h 峰值取 forecast 里各预见期的最大水位，而不是
-                      // assessment.peakValue —— 后者是「超阈事件的峰值」，
-                      // 超阈事件还没结束时就等于当前值，会被读成「不会再涨」。
-                      const sf = forecast.data?.sites[r.site.id]
-                      const peakH = sf
-                        ? sf.horizons.reduce<{ level: number; atMin: number } | null>((a, x) => {
-                            const lv = Number(x.level)
-                            return !a || lv > a.level ? { level: lv, atMin: x.horizonMin } : a
-                          }, null)
-                        : null
-                      return {
-                        siteId: r.site.id,
-                        name: r.site.name,
-                        district: r.site.district ?? '未分区',
-                        level: r.assessment.level,
-                        depth: Number(r.reading.depth),
-                        slope: Number(r.reading.trend1h),
-                        rain: Number(r.reading.rain),
-                        peakLevel: peakH?.level ?? null,
-                        peakAtMin: peakH?.atMin ?? null,
-                      }
-                    })}
+              {/* ---------- 辖区看板：全域总览屏的明细块 ---------- */}
+                            {/* ---------- 辖区预测：六格等大，每格一个辖区一张 12h 曲线 ---------- */}
+              {/* 六格不是六个组件，是同一个 ZoneCellView 按 zoneCells 各渲染一次。
+                  纵轴由 zoneDomain 统一给出 —— 各格自带刻度会让「东城看着比西城高」
+                  变成纯粹的坐标轴错觉。 */}
+              {zoneCells.map((cell, ci) => {
+                const grid = scene.grid
+                const base = grid && grid.id === 'zonegrid' ? rects[grid.id] : rects.zonegrid
+                const nCols = 2
+                const nRows = Math.ceil((grid?.count ?? 6) / nCols)
+                const gap = 12
+                const cw = (base.w - gap * (nCols - 1)) / nCols
+                const ch = (base.h - gap * (nRows - 1)) / nRows
+                const cellRect: Rect = {
+                  x: base.x + (ci % nCols) * (cw + gap),
+                  y: base.y + Math.floor(ci / nCols) * (ch + gap),
+                  w: cw,
+                  h: ch,
+                }
+                return (
+                  <Widget
+                    key={`zone-${cell.district}`}
+                    id="zonegrid"
+                    rect={cellRect}
+                    scale={scale}
+                    editing={editing}
                     p={p}
-                  />
-                </Panel>
-              </Widget>
+                    onChange={setRect}
+                    onCommit={() => saveLayout(layoutRef.current)}
+                  >
+                    <Panel
+                      title={cell.district === '全域合计' ? '全域合计' : cell.district}
+                      sub={cell.district === '全域合计' ? '十站水位合计 · 看是面上的雨还是点上的雨' : `${cell.series.length} 站 · 12h 预测`}
+                      accent={p.level[cell.topLevel]}
+                      style={{ height: '100%' }}
+                    >
+                      <ZoneCellView cell={cell} domain={zoneDomain} p={p} />
+                    </Panel>
+                  </Widget>
+                )
+              })}
+
 
                             <Widget
                 id="compare"
@@ -2306,105 +2604,118 @@ export default function BoardPage() {
               </Widget>
 
               {/* ---------- 数据质量监测 ---------- */}
-              <Widget
-                id="quality"
-                rect={rects.quality}
-                scale={scale}
-                editing={editing}
-                p={p}
-                onChange={setRect}
-                onCommit={() => saveLayout(layoutRef.current)}
-              >
-                <Panel title="数据质量监测" sub="上报新鲜度 · 引擎心跳 · 站点状态" accent={p.level.blue}>
-                  <QualityPanel
-                    rows={list.map((r) => ({
-                      siteId: r.site.id,
-                      name: r.site.name,
-                      district: r.site.district ?? '未分区',
-                      level: r.assessment.level,
-                      staleSec: Math.max(0, Number(anchor) - Number(r.reading.updatedAt ?? anchor)),
-                      quality: r.reading.quality.state,
-                    }))}
-                    health={health.data ?? OFFLINE_HEALTH}
-                    p={p}
-                  />
-                </Panel>
-              </Widget>
+              
 
               {/* ---------- 告警响应时延 ---------- */}
-              <Widget
-                id="latency"
-                rect={rects.latency}
-                scale={scale}
-                editing={editing}
-                p={p}
-                onChange={setRect}
-                onCommit={() => saveLayout(layoutRef.current)}
-              >
-                <Panel title="告警响应时延" sub="从响起到确认到结案 · 分档直方图" accent={p.level.orange}>
-                  <LatencyPanel
-                    rows={(alerts.data ?? []).map((e) => ({
-                      raisedAt: Number(e.raisedAt),
-                      ackedAt: e.ackedAt == null ? null : Number(e.ackedAt),
-                      clearedAt: e.clearedAt == null ? null : Number(e.clearedAt),
-                      level: e.level,
-                      disposition: String(e.disposition),
-                    }))}
-                    p={p}
-                  />
-                </Panel>
-              </Widget>
+              
 
               {/* ---------- 通知投递 ---------- */}
-              <Widget
-                id="delivery"
-                rect={rects.delivery}
-                scale={scale}
-                editing={editing}
-                p={p}
-                onChange={setRect}
-                onCommit={() => saveLayout(layoutRef.current)}
-              >
-                <Panel title="通知投递" sub="按渠道拆成功与失败 · 发了没送到最难发现" accent={p.accent2}>
-                  <DeliveryPanel rows={deliveries.data ?? []} p={p} />
-                </Panel>
-              </Widget>
+              
 
               {/* ---------- 操作审计 ---------- */}
-              <Widget
-                id="auditfeed"
-                rect={rects.auditfeed}
-                scale={scale}
-                editing={editing}
-                p={p}
-                onChange={setRect}
-                onCommit={() => saveLayout(layoutRef.current)}
-              >
-                <Panel title="操作审计" sub="近 24 小时写操作 · 谁在动配置" accent={p.accent}>
-                  <AuditFeed rows={audit.data ?? []} p={p} />
-                </Panel>
-              </Widget>
+              
 
               {/* ---------- 模型版本轨迹 ---------- */}
+              
+
+                            {/* ---------- 全域研判：跨区跨时段的统领性分析 ---------- */}
+
               <Widget
-                id="versions"
-                rect={rects.versions}
+                id="heatmap"
+                rect={rects.heatmap}
                 scale={scale}
                 editing={editing}
                 p={p}
                 onChange={setRect}
                 onCommit={() => saveLayout(layoutRef.current)}
               >
-                <Panel title="模型版本轨迹" sub="每次换版的 3h skill · 换完是不是真的更好" accent={p.forecast}>
-                  <VersionTrack
-                    versions={versions.data?.versions ?? []}
-                    active={versions.data?.active ?? '—'}
-                    p={p}
-                  />
+                <Panel
+                  title="全域水位演进"
+                  sub="时间 × 站点 · 同一行连续变色＝该站持续上涨，同一列一起变色＝全城同时上涨"
+                  accent={p.level.red}
+                  style={{ height: '100%' }}
+                >
+                  <Heatmap rows={heatRows} columns={Array.from({ length: HEAT_COLS }, (_, i) => (i - 5) * 60)} p={p} />
                 </Panel>
               </Widget>
 
-                            <Widget
+              <Widget
+                id="riskmap"
+                rect={rects.riskmap}
+                scale={scale}
+                editing={editing}
+                p={p}
+                onChange={setRect}
+                onCommit={() => saveLayout(layoutRef.current)}
+              >
+                <Panel
+                  title="风险格局"
+                  sub="深度 × 1h 变幅 · 四个象限各有处置含义"
+                  accent={p.level.orange}
+                  style={{ height: '100%' }}
+                >
+                  <RiskQuadrant points={riskPoints} blue={riskBlue} p={p} />
+                </Panel>
+              </Widget>
+
+              <Widget
+                id="trendout"
+                rect={rects.trendout}
+                scale={scale}
+                editing={editing}
+                p={p}
+                onChange={setRect}
+                onCommit={() => saveLayout(layoutRef.current)}
+              >
+                <Panel
+                  title="全域趋势研判"
+                  sub="合计水位 + 预警站数 · 实线已发生，虚线是按当前斜率外延"
+                  accent={p.accent2}
+                  style={{ height: '100%' }}
+                >
+                  <TrendOutlook history={trendHistory} outlook={trendOutlook} p={p} />
+                </Panel>
+              </Widget>
+
+              <Widget
+                id="confidence"
+                rect={rects.confidence}
+                scale={scale}
+                editing={editing}
+                p={p}
+                onChange={setRect}
+                onCommit={() => saveLayout(layoutRef.current)}
+              >
+                <Panel
+                  title="预测可信度"
+                  sub="12h 预测的 90% 区间半宽 · 越短越敢信"
+                  accent={p.forecast}
+                  style={{ height: '100%' }}
+                >
+                  <Confidence rows={confidenceRows} p={p} />
+                </Panel>
+              </Widget>
+
+              <Widget
+                id="districtcmp"
+                rect={rects.districtcmp}
+                scale={scale}
+                editing={editing}
+                p={p}
+                onChange={setRect}
+                onCommit={() => saveLayout(layoutRef.current)}
+              >
+                <Panel
+                  title="多区对比"
+                  sub="五个街道横向比 · 三条各自按全城最大值归一"
+                  accent={p.accent}
+                  style={{ height: '100%' }}
+                >
+                  <DistrictCompare rows={districtCompare} p={p} />
+                </Panel>
+              </Widget>
+
+              <Widget
                 id="decision"
                 rect={rects.decision}
                 scale={scale}

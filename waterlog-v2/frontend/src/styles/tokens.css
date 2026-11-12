@@ -1,0 +1,136 @@
+/* waterlog-v2 设计令牌
+   规范依据：docs/02-design/DESIGN-v2-设计系统规范.md
+   方法：UI UX Pro Max（Data-Dense Dashboard 模式 + 预检清单）
+         design-taste-frontend（三档参数 + 动效纪律 + 一致性锁）
+   规则：所有数值必须来自本文件，禁止在组件里写魔法数。 */
+
+/* ============ 1. 中性层（唯一冷灰族） ============ */
+:root {
+  --bg-canvas: #F5F7FA;
+  --bg-surface: #FFFFFF;
+  --bg-subtle: #F1F5F9;
+  --bg-hover: #F1F5F9;
+  --bg-sunken: #EDF1F6;
+
+  --border-1: #E2E8F0;
+  --border-2: #EEF2F6;
+  --border-strong: #CBD5E1;
+
+  --text-1: #0F172A;
+  --text-2: #475569;
+  --text-3: #94A3B8;
+  --text-inverse: #FFFFFF;
+
+  /* ============ 2. 主色（全站唯一强调色） ============ */
+  --primary: #2563EB;
+  --primary-weak: #EFF6FF;
+  --primary-strong: #1D4ED8;
+  --primary-ink: #1E40AF;
+
+  /* AI 卡靛青边条（v1 契约硬约束：禁紫色渐变） */
+  --accent-ai: #0E7490;
+  --accent-ai-weak: #ECFEFF;
+
+  /* ============ 3. 告警四级：surface 色（图形/背景） ============ */
+  --level-blue: #2563EB;
+  --level-yellow: #D97706;
+  --level-orange: #EA580C;
+  --level-red: #DC2626;
+
+  /* ============ 4. 告警四级：ink 色（文字专用，满足 AA） ============ */
+  --level-blue-ink: #2563EB;
+  --level-yellow-ink: #B45309;
+  --level-orange-ink: #C2410C;
+  --level-red-ink: #DC2626;
+
+  /* 告警等级底色（用于行底/标签底） */
+  --level-blue-weak: #EFF6FF;
+  --level-yellow-weak: #FEF3C7;
+  --level-orange-weak: #FFEDD5;
+  --level-red-weak: #FEE2E2;
+
+  /* ============ 5. 系统语义色（只表达状态，不做装饰） ============ */
+  --success: #16A34A;
+  --success-ink: #15803D;
+  --warning: #D97706;
+  --warning-ink: #B45309;
+  --danger: #DC2626;
+  --danger-ink: #B91C1C;
+  --neutral: #64748B;
+
+  /* ============ 6. 字阶 ============ */
+  --font-sans: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-base: 14px;
+  --fs-md: 15px;
+  --fs-lg: 17px;
+  --fs-xl: 20px;
+  --fs-2xl: 28px;
+  --fs-3xl: 34px;
+
+  --lh-tight: 1.15;
+  --lh-snug: 1.35;
+  --lh-normal: 1.5;
+  --lh-relaxed: 1.65;
+
+  --fw-normal: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  /* ============ 7. 间距标尺（4px 基数） ============ */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+
+  /* ============ 8. 圆角一致性锁（三档，不得混用） ============ */
+  --radius-control: 6px;
+  --radius-card: 8px;
+  --radius-pill: 999px;
+
+  /* ============ 9. 阴影（染色，不用纯黑） ============ */
+  --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-2: 0 4px 16px rgba(15, 23, 42, 0.08);
+  --shadow-3: 0 12px 32px rgba(15, 23, 42, 0.12);
+
+  /* ============ 10. 动效曲线与时长 ============ */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --dur-fast: 150ms;
+  --dur-base: 240ms;
+  --dur-slow: 420ms;
+
+  /* ============ 11. 布局 ============ */
+  --container-max: 1400px;
+  --sidebar-w: 208px;
+  --sidebar-w-collapsed: 64px;
+  --z-sticky: 20;
+  --z-overlay: 100;
+
+  /* ============ 12. 深色侧栏（唯一深色表面） ============ */
+  --sidebar-bg: #0F172A;
+  --sidebar-border: #1E293B;
+  --sidebar-text: #CBD5E1;
+  --sidebar-text-active: #FFFFFF;
+  --sidebar-muted: #64748B;
+  --sidebar-accent: #3B82F6;
+  --sidebar-accent-deep: #1E40AF;
+  --sidebar-accent-soft: #93C5FD;
+  --sidebar-accent-weak: rgba(37, 99, 235, 0.20);
+  --sidebar-hover: rgba(148, 163, 184, 0.10);
+
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  line-height: var(--lh-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
