@@ -1,4 +1,4 @@
-# waterlog-v3 端到端验收脚本
+﻿# waterlog-v3 端到端验收脚本
 #
 # 用法：
 #   .\scripts\acceptance.ps1                 # 完整验收（会注入暴雨、约 8 分钟）
@@ -109,9 +109,19 @@ try {
     exit 2
 }
 
+# 引擎存活判定分两种跑法：
+#   本地（Base 在本机）——直连引擎端口，能看到 cycles/pending 这类运行时细节；
+#   远端（Base 是别的机器）——引擎刻意只绑 127.0.0.1，外面连不上，改看 Go API
+#   回报的 engine_ok。后者其实更有价值：它同时证明了「网关→引擎」这条链路通。
+$localRun = $Base -match '127\.0\.0\.1|localhost'
 try {
-    $e = (HttpGet "$Engine/health") | ConvertFrom-Json
-    Check 'Python 引擎在线' ($e.ok -eq $true) ("model={0} cycles={1} pending={2}" -f $e.model_version, $e.cycles, $e.pending)
+    if ($localRun) {
+        $e = (HttpGet "$Engine/health") | ConvertFrom-Json
+        Check 'Python 引擎在线' ($e.ok -eq $true) ("model={0} cycles={1} pending={2}" -f $e.model_version, $e.cycles, $e.pending)
+    } else {
+        $ok = $h.engine_health.ok -eq $true
+        Check 'Python 引擎在线' $ok ("经网关判定 model={0} cycles={1} pending={2}" -f $h.engine_health.model_version, $h.engine_health.cycles, $h.engine_health.pending)
+    }
 } catch {
     Check 'Python 引擎在线' $false $_.Exception.Message
 }
