@@ -348,6 +348,13 @@ body {
 
 /* 骨架屏微光：加载态用它而不是转圈——转圈只有一个位置的信息，
    微光块能提前把「这里将来会出现什么形状」告诉用户。 */
+/* 工作台的骨架屏微光。与 wl-shimmer 分开命名是刻意的：
+   工作台的块高度差很大，用同一套背景尺寸会出现「大块看着没在动」。 */
+@keyframes wb-shimmer {
+  0% { background-position: 120% 0; }
+  100% { background-position: -20% 0; }
+}
+
 @keyframes wl-shimmer {
   0% { background-position: 100% 0; }
   100% { background-position: 0 0; }

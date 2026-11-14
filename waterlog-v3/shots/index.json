@@ -1,58 +1,122 @@
-{
-  "base": "http://127.0.0.1:8200",
-  "width": 1600,
-  "height": 1500,
-  "captured_at": "2026-11-14T18:15:27.431Z",
-  "pages": [
-    {
-      "name": "01-overview",
-      "route": "/",
-      "bytes": 577228.8
-    },
-    {
-      "name": "02-sites",
-      "route": "/sites",
-      "bytes": 301875.2
-    },
-    {
-      "name": "03-detail-S07",
-      "route": "/sites/S07",
-      "bytes": 404275.2
-    },
-    {
-      "name": "04-alerts",
-      "route": "/alerts",
-      "bytes": 240025.6
-    },
-    {
-      "name": "05-shift",
-      "route": "/shift",
-      "bytes": 395980.8
-    },
-    {
-      "name": "06-model",
-      "route": "/model",
-      "bytes": 534425.6
-    },
-    {
-      "name": "07-rules",
-      "route": "/rules",
-      "bytes": 243814.4
-    },
-    {
-      "name": "08-system",
-      "route": "/system",
-      "bytes": 373043.2
-    },
-    {
-      "name": "09-admin",
-      "route": "/admin",
-      "bytes": 189440
-    },
-    {
-      "name": "10-login",
-      "route": "/login",
-      "bytes": 121753.6
-    }
-  ]
-}
+[
+ {
+  "file": "shots/board-edit.png",
+  "bytes": 1247055
+ },
+ {
+  "file": "shots/board-light-s0.png",
+  "bytes": 686912
+ },
+ {
+  "file": "shots/board-light-s1.png",
+  "bytes": 295829
+ },
+ {
+  "file": "shots/board-light-s2.png",
+  "bytes": 426636
+ },
+ {
+  "file": "shots/board-light.png",
+  "bytes": 411562
+ },
+ {
+  "file": "shots/prod-board-s0.png",
+  "bytes": 686912
+ },
+ {
+  "file": "shots/prod-board-s1.png",
+  "bytes": 295829
+ },
+ {
+  "file": "shots/prod-board-s2.png",
+  "bytes": 426636
+ },
+ {
+  "file": "shots/prod-board.png",
+  "bytes": 410929
+ },
+ {
+  "file": "shots/tour-01.png",
+  "bytes": 309338
+ },
+ {
+  "file": "shots/tour-02.png",
+  "bytes": 334161
+ },
+ {
+  "file": "shots/tour-03.png",
+  "bytes": 294390
+ },
+ {
+  "file": "shots/tour-04.png",
+  "bytes": 291833
+ },
+ {
+  "file": "shots/tour-05.png",
+  "bytes": 209426
+ },
+ {
+  "file": "shots/tour-06.png",
+  "bytes": 213935
+ },
+ {
+  "file": "shots/tour-07.png",
+  "bytes": 220739
+ },
+ {
+  "file": "shots/tour-08.png",
+  "bytes": 270659
+ },
+ {
+  "file": "shots/tour-09.png",
+  "bytes": 236194
+ },
+ {
+  "file": "shots/workbench-01-home.png",
+  "bytes": 317416
+ },
+ {
+  "file": "shots/workbench-02-rail-state.png",
+  "bytes": 317339
+ },
+ {
+  "file": "shots/workbench-03-site-stage.png",
+  "bytes": 197859
+ },
+ {
+  "file": "shots/workbench-04-drill-2.png",
+  "bytes": 199725
+ },
+ {
+  "file": "shots/workbench-05-esc.png",
+  "bytes": 199596
+ },
+ {
+  "file": "shots/workbench-06-fact-governance.png",
+  "bytes": 265877
+ },
+ {
+  "file": "shots/workbench-06-fact-handoff.png",
+  "bytes": 139723
+ },
+ {
+  "file": "shots/workbench-06-fact-plumbing.png",
+  "bytes": 251214
+ },
+ {
+  "file": "shots/workbench-06-fact-situation.png",
+  "bytes": 316421
+ },
+ {
+  "file": "shots/workbench-06-fact-trust.png",
+  "bytes": 240716
+ },
+ {
+  "file": "shots/workbench-07-event-stage.png",
+  "bytes": 197977
+ },
+ {
+  "file": "shots/workbench-08-narrow.png",
+  "bytes": 173227
+ }
+]

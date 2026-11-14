@@ -490,10 +490,12 @@ try {
 # ---------------------------------------------------------------- 5. 前端页面
 if ($Shots) {
     Section '5. 前端页面截图'
-    $before = @(Get-ChildItem shots\*.png -ErrorAction SilentlyContinue).Count
-    & node scripts\shoot.mjs 2>&1 | ForEach-Object { Write-Host ("    " + $_) -ForegroundColor DarkGray }
-    $after = @(Get-ChildItem shots\*.png -ErrorAction SilentlyContinue).Count
-    Check '九页截图全部产出' ($after -ge 9) ("shots/ 共 {0} 张（含登录页与管理台）" -f $after)
+    # 只跑一次：它既产出截图，又是后面 5.5 段的功能证据。
+    # 跑两次不仅慢一倍，还会让两段的结论来自两个时刻的数据（SSE 一直在推）。
+    $global:wbOut = & node scripts\shoot-workbench.mjs --base $Base --no-storm 2>&1
+    $global:wbOut | ForEach-Object { Write-Host ("    " + $_) -ForegroundColor DarkGray }
+    $wbShots = @(Get-ChildItem shots\workbench-*.png -ErrorAction SilentlyContinue).Count
+    Check '工作台八张动作截图产出' ($wbShots -ge 8) ("shots/workbench-*.png 共 {0} 张" -f $wbShots)
 }
 
 # ---------------------------------------------------------------- 5.5 交互走查
@@ -505,21 +507,16 @@ if ($Shots) {
 if ($Shots) {
     Section '5.5 交互走查（真点击 + 读回 DOM）'
 
-    $dw = & node scripts\shoot-drawers.mjs --base $Base 2>&1
-    $dwOk = @($dw | Where-Object { $_ -match '—— OK' }).Count
-    $dwFail = @($dw | Where-Object { $_ -match 'FAIL' }).Count
-    $dw | ForEach-Object { Write-Host ("    " + $_) -ForegroundColor DarkGray }
-    Check '跨页抽屉可开可拖宽' ($dwOk -ge 4 -and $dwFail -eq 0) ("{0} 页通过，{1} 处失败" -f $dwOk, $dwFail)
+    # 工作台的 30+ 条断言（真点击 + 读回 DOM 状态），覆盖「不换页、左栏不重置、
+    # 钻取栈能退、顶栏入口都能到、1280 宽三栏还在」这些只有真点才测得出的东西。
+    $wbOk = @($global:wbOut | Where-Object { $_ -match '✓' }).Count
+    $wbFail = @($global:wbOut | Where-Object { $_ -match '✗' }).Count
+    Check '工作台交互 30 项以上全过' ($wbOk -ge 28 -and $wbFail -eq 0) ("{0} 通过，{1} 失败" -f $wbOk, $wbFail)
 
     $tr = & node scripts\shoot-tour.mjs --base $Base 2>&1
     $trHit = @($tr | Where-Object { $_ -match '^\s*第 \d+ 步.*锚点命中' }).Count
     $tr | ForEach-Object { Write-Host ("    " + $_) -ForegroundColor DarkGray }
     Check '演示流程九步锚点全部命中' ($trHit -eq 9) ("命中 {0} / 9 步" -f $trHit)
-
-    $sy = & node scripts\shoot-system.mjs --base $Base 2>&1
-    $syFail = @($sy | Where-Object { $_ -match 'FAIL' }).Count
-    $sy | ForEach-Object { Write-Host ("    " + $_) -ForegroundColor DarkGray }
-    Check '系统页链路与接口抽屉可用' ($syFail -eq 0) ("{0} 处失败" -f $syFail)
 
     $st = & node scripts\check-stars.mjs --base $Base 2>&1
     $stFail = @($st | Where-Object { $_ -match 'FAIL|失败：' }).Count

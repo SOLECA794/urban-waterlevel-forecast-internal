@@ -27,18 +27,24 @@ const CHROME = [
   'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
 ].find((p) => fs.existsSync(p));
 
-const PAGES = [
-  ['/', '一张图'],
-  ['/live', '实时地图'],
-  ['/sites', '站点列表'],
-  ['/sites/S08', '站点详情'],
-  ['/alerts', '预警中心'],
-  ['/shift', '值班台'],
-  ['/model', '模型评估'],
-  ['/rules', '规则配置'],
-  ['/system', '系统状态'],
-  ['/admin', '管理台'],
-  ['/board', '大屏'],
+/**
+ * 检查面 = 九个舞台 + 大屏。
+ *
+ * 工作台只有一屏，所以不能再按「路由」扫——要按**舞台**扫：
+ * 每个舞台是另一条渲染路径，谁的文案里漏了星号都不会互相发现。
+ * 入口一律靠可寻址属性（`data-fact` / `data-trust-link` / `data-rail-row`），
+ * 不靠文字内容找按钮——文案会改，属性不会。
+ */
+const VIEWS = [
+  { label: '全域态势', click: null },
+  { label: '值班交接', click: '[data-fact="handoff"]' },
+  { label: '模型可信度', click: '[data-fact="trust"]' },
+  { label: '链路与接口', click: '[data-fact="plumbing"]' },
+  { label: '治理', click: '[data-fact="governance"]' },
+  { label: '规则预演', click: '[data-trust-link="rules"]', via: '[data-fact="trust"]' },
+  { label: '站点舞台', click: '[data-rail-row]' },
+  { label: '预警卷宗', click: '[data-rail-tab="events"]', then: '[data-event-row]' },
+  { label: '大屏', click: '[data-fact="wall"]' },
 ];
 
 function httpJson(url, opts = {}, body) {
@@ -130,44 +136,58 @@ async function main() {
 
   let hit = 0;
   const rows = [];
-  for (const [route, label] of PAGES) {
-    await cmd('Page.navigate', { url: new URL(route, BASE).href });
-    await sleep(route === '/board' ? 4200 : 2200);
-    // 抽屉是额外的渲染面：站名/行的可点元素点开后，抽屉里的文案也要检查
-    const text = await ev(`(() => {
-      const strip = (s) => s.replace(/\\s+/g, ' ');
-      return strip(document.body.innerText || '');
-    })()`);
+  const probe = async (where) => {
+    const text = await ev(`(document.body.innerText || '').replace(/\s+/g, ' ')`);
     const idx = text.indexOf('**');
     if (idx >= 0) {
-      hit++;
-      rows.push({ route, label, where: text.slice(Math.max(0, idx - 46), idx + 46) });
+      hit += 1;
+      rows.push({ where, ctx: text.slice(Math.max(0, idx - 46), idx + 46) });
     }
-  }
-  // 打开一次抽屉再查：抽屉文案走的是另一条渲染路径
-  await cmd('Page.navigate', { url: new URL('/sites', BASE).href });
-  await sleep(2200);
-  const opened = await ev(`(() => {
-    const el = document.querySelector('[data-site-row]');
-    if (!el) return false;
-    el.click();
-    return true;
-  })()`);
-  if (opened) {
-    await sleep(1400);
-    const dt = await ev(`(document.body.innerText || '').replace(/\\s+/g, ' ')`);
-    const di = dt.indexOf('**');
-    if (di >= 0) {
-      hit++;
-      rows.push({ route: '/sites(抽屉)', label: '抽屉', where: dt.slice(Math.max(0, di - 46), di + 46) });
+  };
+
+  // 每次从首页重新开始：舞台之间会互相改变左栏状态，
+  // 顺着点下去第三个之后就不再是原来的那个右栏内容了。
+  for (const v of VIEWS) {
+    await cmd('Page.navigate', { url: new URL('/', BASE).href });
+    await sleep(2400);
+    // 有些入口在别的舞台里（「规则预演」要先到「模型可信度」才看得见）。
+    // 先走 `via`，否则会报「入口找不到」——那不是入口坏了，是没走到那一层。
+    if (v.via) {
+      await ev(`(() => { const el = document.querySelector(${JSON.stringify(v.via)}); if (el) el.click(); return !!el })()`);
+      await sleep(1400);
     }
+    const clicked = await ev(`(() => {
+      const sel = ${JSON.stringify(v.click)};
+      if (!sel) return 'none';
+      const el = document.querySelector(sel);
+      if (!el) return 'missing';
+      el.click();
+      return 'ok';
+    })()`);
+    if (v.click && clicked !== 'ok') {
+      hit += 1;
+      rows.push({ where: v.label, ctx: `入口 ${v.click} 找不到（${clicked}）` });
+      continue;
+    }
+    await sleep(1300);
+    if (v.then) {
+      await ev(`(() => { const el = document.querySelector(${JSON.stringify(v.then)}); if (el) el.click(); return !!el })()`);
+      await sleep(900);
+    }
+    await probe(v.label);
   }
 
+  // 大屏是另一条路由（投屏用），单独走一遍
+  await cmd('Page.navigate', { url: new URL('/board', BASE).href });
+  await sleep(4200);
+  await probe('大屏页');
+
   for (const r of rows) {
-    console.log(`  FAIL  ${r.route.padEnd(14)} ${r.label}  附近：…${r.where}…`);
+    console.log(`  FAIL  ${r.where.padEnd(12)}  附近：…${r.ctx}…`);
   }
   console.log(
-    `\n  ${hit === 0 ? '全部 ' + PAGES.length + ' 页渲染文案里没有裸星号' : hit + ' 处页面上出现了星号'}`,
+    `
+  ${hit === 0 ? '全部 ' + (VIEWS.length + 1) + ' 个检查面里没有裸星号' : hit + ' 处出现了星号'}`,
   );
   if (hit === 0) console.log('  —— OK 渲染文案里没有裸 markdown 星号');
 

@@ -1,25 +1,22 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { Layout } from './components/Layout'
 import { RequireAuth } from './components/RequireAuth'
 import { LoginPage } from './pages/LoginPage'
-import { AdminPage } from './pages/AdminPage'
-import { OverviewPage } from './pages/OverviewPage'
-import { SitesPage } from './pages/SitesPage'
-import { SiteDetailPage } from './pages/SiteDetailPage'
 import { TourHost } from './components/TourHost'
-import { AlertsPage } from './pages/AlertsPage'
-import { ShiftPage } from './pages/ShiftPage'
-import { ModelPage } from './pages/ModelPage'
-import { RulesPage } from './pages/RulesPage'
-import { SystemPage } from './pages/SystemPage'
 import BoardPage from './board/BoardPage'
-import { LivePage } from './pages/LivePage'
+import { WorkbenchPage } from './workbench/WorkbenchPage'
 
 /**
  * 路由表。
  *
- * /login 在闸门外面，其余全部包在 RequireAuth 里。
- * 这样加新页面时不会漏鉴权——漏掉的是一个 Route 行，而不是一个守卫。
+ * 只剩三条：登录、大屏、工作台。**没有侧栏导航，也没有「第几页」**——
+ * 业务能力全部收在 `/` 这一屏里，靠点击与层次关系展开（见 `workbench/model.ts`）。
+ *
+ * 旧的多页入口（/sites、/alerts、/shift、/model、/rules、/system、/admin、/live）
+ * 连同 `components/Layout.tsx` 一起删掉了：留着它们就是留着一条没有导航、
+ * 却能被地址栏打开的第二套界面，两套界面的口径迟早会分叉。
+ * 深链接进来（比如别人发的旧链接）一律落到 `/`，工作台自己从 URL 读 ?on=&site= 复原画面。
+ *
+ * /board 仍然独立：它是投到大厅的无交互大屏，和工作台是两种用法，不该塞进同一屏。
  */
 export default function App() {
   return (
@@ -29,25 +26,16 @@ export default function App() {
           （表现为整页白屏，控制台只有一句 Uncaught Error，看不出是这个原因）。 */}
       <TourHost />
       <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route element={<RequireAuth />}>
-        {/* 大厅大屏：在 Layout 之外，所以没有侧栏；仍在闸门之内，避免裸奔 */}
-        <Route path="/board" element={<BoardPage />} />
-        <Route element={<Layout />}>
-          <Route index element={<OverviewPage />} />
-          {/* 应用版一张图：在侧栏布局里（要左栏列表），不是独立大屏 */}
-          <Route path="live" element={<LivePage />} />
-          <Route path="sites" element={<SitesPage />} />
-          <Route path="sites/:id" element={<SiteDetailPage />} />
-          <Route path="alerts" element={<AlertsPage />} />
-          <Route path="shift" element={<ShiftPage />} />
-          <Route path="model" element={<ModelPage />} />
-          <Route path="rules" element={<RulesPage />} />
-          <Route path="system" element={<SystemPage />} />
-          <Route path="admin" element={<AdminPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route element={<RequireAuth />}>
+          {/* 大厅大屏：无交互轮换，投到墙上用的 */}
+          <Route path="/board" element={<BoardPage />} />
+          {/* 工作台：整个系统就这一屏 */}
+          <Route path="/" element={<WorkbenchPage />} />
+          {/* 旧的 /w 别名保留：上一轮交接时发出去的链接还能打开 */}
+          <Route path="/w" element={<Navigate to="/" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
-      </Route>
       </Routes>
     </>
   )
