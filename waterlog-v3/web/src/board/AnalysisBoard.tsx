@@ -9,7 +9,7 @@ import type { Palette } from './theme'
  *
  *   Heatmap      这波是怎么蔓延开的 —— 时间 × 站点的等级矩阵
  *   RiskQuadrant 现在该先救谁 —— 深度 × 涨速，四个象限各有处置含义
- *   TrendOutlook 是收尾还是要来第二波 —— 合计水位走势 + 6~12h 外推
+ *   TrendOutlook 是收尾还是要来第二波 —— 预警站数走势 + 6~12h 外推
  *   Confidence   哪几个站的预测敢信 —— 区间宽度横向对比
  *   DistrictCompare 五个区横向比谁更吃力
  */
@@ -271,24 +271,30 @@ export function RiskQuadrant({ points, blue, p }: { points: readonly RiskPoint[]
 
 export interface TrendPoint {
   readonly offsetMin: number
-  /** 全域合计积水深（m） */
-  readonly sumDepth: number
   /**
-   * 该时刻处于预警（蓝及以上）的站数。
+   * 该时刻处于预警（蓝及以上）的站数。主图。
    *
-   * 可选：**历史段给不出这个数** —— 库里存的是水位序列，预警站数要按当时的
-   * 阈值逐站重判，而阈值改过之后重判出来的不是当时的结论。与其编一个数，
-   * 不如让这条线只在有把握的那一段画出来。
+   * 不用「全域合计积水深」：水深是强度量，各站高程基准不同，相加没有物理
+   * 含义。站数有绝对含义，且正是这一格要回答的问题。
    */
-  readonly alarmCount?: number
+  readonly alarmCount: number
+  /**
+   * 该时刻十站中最深的那一站的积水深（m）。
+   *
+   * 取 max 而不是 sum：max 在所有站之间都有含义（「最深的那个深到什么程度」），
+   * sum 只在这一级强度量上才有含义。
+   */
+  readonly maxDepth: number
 }
 
 /**
- * 趋势研判：全域合计水位 + 预警站数的时间走势，外加 6~12h 外推。
+ * 趋势研判：预警站数与最深积水的时间走势，外加 6~12h 外推。
  *
- * 回答「这波是收尾了还是要来第二波」。判断口径写死在图上：
- * 外推段用虚线、区间用淡带，并且**明确标注这是外推不是预测**——
- * 混淆这两者是分析类面板最容易造成的事故。
+ * 回答「这波是收尾了还是要来第二波」。主图是**预警站数**（0~10 站，
+ * 有绝对含义），叠一条最深积水曲线（取十站最大值，不是相加）。
+ *
+ * 判断口径写死在图上：外推段用虚线，并明确标注「按当前斜率外延」——
+ * 混淆外推与模型预测是分析类面板最容易造成的事故。
  */
 export function TrendOutlook({ history, outlook, p }: {
   history: readonly TrendPoint[]
@@ -299,8 +305,9 @@ export function TrendOutlook({ history, outlook, p }: {
   if (history.length < 2) return <div style={{ fontSize: 11, color: p.textFaint }}>等待历史数据</div>
 
   const all = [...history, ...outlook]
-  const maxSum = Math.max(0.1, ...all.map((x) => x.sumDepth))
-  const maxN = Math.max(1, ...all.map((x) => x.alarmCount ?? 0))
+  // 站数轴固定 0~10：这是绝对量，不该跟着数据缩放——缩放了就没有「几站」的手感。
+  const maxN = Math.max(10, ...all.map((x) => x.alarmCount))
+  const maxD = Math.max(0.1, ...all.map((x) => x.maxDepth))
   const maxMin = Math.max(...all.map((x) => x.offsetMin), 60)
 
   const W = 100
@@ -309,7 +316,7 @@ export function TrendOutlook({ history, outlook, p }: {
   const padR = 1
   const iw = W - padL - padR
   const sx = (m: number) => padL + (m / maxMin) * iw
-  const syD = (v: number) => H - (v / maxSum) * H
+  const syD = (v: number) => H - (v / maxD) * H
   const syN = (v: number) => H - (v / maxN) * H
 
   const line = (pts: readonly TrendPoint[], f: (x: TrendPoint) => number) =>
@@ -317,8 +324,23 @@ export function TrendOutlook({ history, outlook, p }: {
 
   const lastHist = history[history.length - 1]
   const lastOut = outlook[outlook.length - 1]
-  const delta = lastOut ? lastOut.sumDepth - lastHist.sumDepth : 0
-  const verdict = delta > 0.05 ? '还要涨一轮' : delta > -0.05 ? '已在平台期' : '正在退水'
+
+  // 结论按「站数变化」判，不按水深之和判：站数才是「几个站在危险里」的直接答案。
+  const dN = lastOut ? lastOut.alarmCount - lastHist.alarmCount : 0
+  const dD = lastOut ? lastOut.maxDepth - lastHist.maxDepth : 0
+  // 结论按「站数优先、水深补充」判：站数变多就一定在扩大，站数变少就是在收尾；
+  // 站数不变时再看最深水位——它比站数敏感，因为水退到阈值以下之前站数不会动。
+  const verdict =
+    dN > 0
+      ? '预警范围扩大'
+      : dN < 0
+        ? '预警正在收尾'
+        : dD > 0.02
+          ? '站数不变 · 深度仍在涨'
+          : dD < -0.02
+            ? '站数不变 · 深度在退'
+            : '已趋稳'
+  const verdictColor = dN > 0 ? p.levelInk.orange : dN < 0 ? p.levelInk.blue : dD > 0.02 ? p.levelInk.orange : p.levelInk.blue
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -328,23 +350,32 @@ export function TrendOutlook({ history, outlook, p }: {
           <rect x={sx(lastHist.offsetMin)} y={0} width={Math.max(W - sx(lastHist.offsetMin) - padR, 0)} height={H} fill={p.forecast} opacity={0.06} />
           <line x1={sx(lastHist.offsetMin)} x2={sx(lastHist.offsetMin)} y1={0} y2={H} stroke={p.forecast} strokeWidth={1} strokeDasharray="2 2" vectorEffect="non-scaling-stroke" opacity={0.7} />
 
-          {/* 预警站数（阶梯柱，浅色垫底） */}
-          {/* 预警站数只在拿得到的点上画：历史段没有这个数（当时阈值下的结论
-              补不回来），硬画一条 0 会让读者以为「那几小时一个站都没预警」。 */}
-          {history.map((pt, i) => {
-            if (pt.alarmCount == null) return null
-            const next = history[i + 1]?.offsetMin ?? pt.offsetMin + maxMin / history.length
+          {/* 主图：预警站数——用面积铺底 + 阶梯柱，阶梯才能表达「站数是跳变的」 */}
+          {all.map((pt, i) => {
+            const isOutlook = i >= history.length
+            const next = all[i + 1]?.offsetMin ?? pt.offsetMin + maxMin / all.length
             const x = sx(pt.offsetMin)
             const w = Math.max(sx(next) - x, 0.4)
             const y = syN(pt.alarmCount)
-            return <rect key={i} x={x} y={y} width={w} height={H - y} fill={p.level.orange} opacity={0.13} />
+            return (
+              <rect
+                key={i}
+                x={x}
+                y={y}
+                width={w}
+                height={H - y}
+                fill={p.level.orange}
+                opacity={isOutlook ? 0.10 : 0.20}
+              />
+            )
           })}
 
-          {/* 合计水位：历史实线 + 外推虚线 */}
-          <path d={line(history, (x) => syD(x.sumDepth))} fill="none" stroke={p.accent} strokeWidth={1.6} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+          {/* 最深积水：取十站最大值，历史实线 + 外推虚线。
+              这是「危险到什么程度」，与站数（「几个站危险」）互补。 */}
+          <path d={line(history, (x) => syD(x.maxDepth))} fill="none" stroke={p.accent} strokeWidth={1.6} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
           {outlook.length > 1 && (
             <path
-              d={line([lastHist, ...outlook], (x) => syD(x.sumDepth))}
+              d={line([lastHist, ...outlook], (x) => syD(x.maxDepth))}
               fill="none"
               stroke={p.forecast}
               strokeWidth={1.4}
@@ -354,19 +385,24 @@ export function TrendOutlook({ history, outlook, p }: {
             />
           )}
         </svg>
-        <span style={{ position: 'absolute', left: 0, top: 0, fontSize: 8, color: p.textFaint }}>{maxSum.toFixed(1)}</span>
+        <span style={{ position: 'absolute', left: 0, top: 0, fontSize: 8, color: p.textFaint }}>{maxN} 站</span>
         <span style={{ position: 'absolute', right: 0, top: 0, fontSize: 8, color: p.forecast }}>← 外推</span>
+        <span style={{ position: 'absolute', left: 0, bottom: 0, fontSize: 8, color: p.accent }}>{maxD.toFixed(2)} m</span>
       </div>
 
       <div style={{ flex: '0 0 auto', display: 'flex', gap: 10, fontSize: 9, color: p.textFaint, paddingTop: 4, alignItems: 'baseline' }}>
-        <span>全域合计 <b style={{ fontSize: 12.5, color: p.accent, fontVariantNumeric: 'tabular-nums' }}>{lastHist.sumDepth.toFixed(1)}</b> m</span>
         <span>预警 <b style={{ fontSize: 12.5, color: p.levelInk.orange, fontVariantNumeric: 'tabular-nums' }}>{lastHist.alarmCount}</b> 站</span>
-        <span style={{ marginLeft: 'auto', fontWeight: 600, color: delta > 0.05 ? p.levelInk.orange : delta < -0.05 ? p.levelInk.blue : p.textDim }}>
-          {verdict} <span style={{ fontWeight: 'normal', color: p.textFaint }}>（{delta >= 0 ? '+' : ''}{delta.toFixed(2)}m / 6h）</span>
+        <span>最深 <b style={{ fontSize: 12.5, color: p.accent, fontVariantNumeric: 'tabular-nums' }}>{lastHist.maxDepth.toFixed(2)}</b> m</span>
+        <span style={{ marginLeft: 'auto', fontWeight: 600, color: verdictColor }}>
+          {verdict}{' '}
+          <span style={{ fontWeight: 'normal', color: p.textFaint }}>
+            （6h 后 {lastOut ? lastOut.alarmCount : lastHist.alarmCount} 站 ·{' '}
+            {(lastOut ? lastOut.maxDepth : lastHist.maxDepth).toFixed(2)} m）
+          </span>
         </span>
       </div>
       <div style={{ flex: '0 0 auto', fontSize: 8.5, color: p.textFaint }}>
-        实线为已发生 · 虚线是按当前斜率外延 6h，**不是模型预测**
+        实线为已发生 · 虚线是按当前斜率外延 6h，不是模型预测
       </div>
     </div>
   )
@@ -428,7 +464,7 @@ export function Confidence({ rows, p }: { rows: readonly ConfidenceRow[]; p: Pal
       </div>
 
       <div style={{ flex: '0 0 auto', fontSize: 8.5, color: p.textFaint, paddingTop: 4, borderTop: `1px solid ${p.panelLine}` }}>
-        条＝12h 预测的 90% 区间半宽，**越短越可信**。<b style={{ color: p.levelInk.red }}>长条意味着输入数据不足</b>，不是情况更复杂。
+        条＝12h 预测的 90% 区间半宽，越短越可信。<b style={{ color: p.levelInk.red }}>长条意味着输入数据不足</b>，不是情况更复杂。
       </div>
     </div>
   )
@@ -516,18 +552,16 @@ export function projectTrend(history: readonly TrendPoint[], hoursAhead = 6): Tr
   const prev = history[history.length - 1 - n]
   const steps = last.offsetMin - prev.offsetMin
   if (steps <= 0) return []
-  const dSum = (last.sumDepth - prev.sumDepth) / steps
-  // 站数外推只在两个端点都有数时做；缺一侧就连外推带过去的数一起省掉，
-  // 不然会画出一条从「已知」突然跳到「猜的」的柱子。
-  const dN =
-    last.alarmCount != null && prev.alarmCount != null ? (last.alarmCount - prev.alarmCount) / steps : null
+  // 按最近几小时的平均斜率分别外延两个量：站数取整（不能出现 3.4 站），
+  // 最深积水保留下限 0（水深不会为负）。
+  const dN = (last.alarmCount - prev.alarmCount) / steps
+  const dD = (last.maxDepth - prev.maxDepth) / steps
   const out: TrendPoint[] = []
   for (let m = 60; m <= hoursAhead * 60; m += 60) {
     out.push({
       offsetMin: last.offsetMin + m,
-      sumDepth: Math.max(0, last.sumDepth + dSum * m),
-      alarmCount:
-        dN != null && last.alarmCount != null ? Math.max(0, Math.round(last.alarmCount + dN * m)) : undefined,
+      alarmCount: Math.max(0, Math.min(10, Math.round(last.alarmCount + dN * m))),
+      maxDepth: Math.max(0, last.maxDepth + dD * m),
     })
   }
   return out

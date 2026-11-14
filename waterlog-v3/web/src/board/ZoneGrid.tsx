@@ -46,6 +46,15 @@ export interface ZoneCell {
   readonly topLevel: Level
   /** 该区最深积水（m） */
   readonly maxDepth: number
+  /**
+   * 区内分化：各站「当前水深 / 各自红阈」的极差。
+   *
+   * 同一场雨下各区曲线同形，真正的差异在**区内各站退水的快慢**。
+   * 单站区恒为 0，不显示。
+   */
+  readonly spread?: number
+  /** 区内退得最慢（倍数最高）的站名，用于把分化落到具体对象 */
+  readonly slowestName?: string
   /** 该区 12h 内最高预测水位与出现时刻 */
   readonly peak: { level: number; atMin: number; name: string } | null
   /** 首次穿过红阈的分钟数；不穿为 null */
@@ -59,8 +68,16 @@ export interface ZoneCell {
    * 才有业务含义——倍数无量纲、跨站可比，直接回答「谁真正危险」。
    */
   readonly ranking?: readonly ZoneRankRow[]
-  /** 排行里已达或超红阈的站数 */
+  /** 榜内已达或超红阈的站数 */
   readonly overCount?: number
+  /**
+   * 全城（十站）越过红阈的站数。
+   *
+   * 与 `overCount` 分开：排行只取前 5 站，`overCount` 只统计榜内，
+   * 而整屏标题可能写「10 站红色预警」。两个数都对但口径不同，
+   * 不区分开就会读成自相矛盾。
+   */
+  readonly overCountAll?: number
 }
 
 /** 排行里的一行：一站在此刻的危险程度。 */
@@ -136,7 +153,11 @@ function ZoneRankView({ cell, p, activeSiteId, onPickSite }: {
               background: overCount > 0 ? p.levelSoft.red : p.levelSoft.blue,
             }}
           >
-            {overCount > 0 ? `${overCount} 站越过红阈` : '无站越过红阈'}
+            {cell.overCountAll != null && cell.overCountAll > overCount
+              ? `全城 ${cell.overCountAll} 站越阈 · 榜上 ${overCount} 站`
+              : overCount > 0
+                ? `${overCount} 站越过红阈`
+                : '无站越过红阈'}
           </span>
         </span>
       </div>
@@ -318,6 +339,15 @@ export function ZoneCellView({ cell, domain, p, activeSiteId, onPickSite }: {
         <span style={{ flex: '0 0 3px', alignSelf: 'stretch', background: p.level[cell.topLevel], borderRadius: 2 }} />
         <b style={{ fontSize: 13.5, letterSpacing: 0.3, whiteSpace: 'nowrap' }}>{cell.district}</b>
         <span style={{ fontSize: 9.5, color: p.textFaint }}>{cell.series.length} 站 · {LEVEL_NAME[cell.topLevel]}</span>
+        {/* 分化只在多站区显示：单站区的极差恒为 0，占位置没有信息 */}
+        {cell.spread != null && cell.spread > 0.05 && (
+          <span style={{ fontSize: 9.5, color: p.textFaint, whiteSpace: 'nowrap' }}>
+            分化{' '}
+            <b style={{ fontSize: 11, color: p.textDim, fontVariantNumeric: 'tabular-nums' }}>{cell.spread.toFixed(2)}</b>
+            ×
+            {cell.slowestName && <span> · {cell.slowestName}退得最慢</span>}
+          </span>
+        )}
         <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'baseline', gap: 9, whiteSpace: 'nowrap' }}>
           <span style={{ fontSize: 9.5, color: p.textFaint }}>
             此刻 <b style={{ fontSize: 12, color: p.levelInk[cell.topLevel], fontVariantNumeric: 'tabular-nums' }}>{cell.maxDepth.toFixed(2)}</b> m

@@ -497,7 +497,26 @@ export default function BoardPage() {
         maxDepth = Math.max(maxDepth, Number(m.reading.depth))
       }
 
-      return { district, series: zseries, topLevel, maxDepth, peak, crossRedAtMin: crossRed, thresholds: thr }
+      // 区内分化：各站「当前深/各自红阈」的极差。多站区才说明问题——
+      // 同一场雨里有的站退得快、有的退得慢，这个差就是「区内不均匀」。
+      const ratios = members.map((m) => {
+        const red = Number(m.site.thresholds.red)
+        return { name: m.site.name, r: red > 0 ? Number(m.reading.depth) / red : 0 }
+      })
+      const spread = ratios.length > 1 ? Math.max(...ratios.map((x) => x.r)) - Math.min(...ratios.map((x) => x.r)) : 0
+      const slowest = ratios.slice().sort((a, b) => b.r - a.r)[0]
+
+      return {
+        district,
+        series: zseries,
+        topLevel,
+        maxDepth,
+        peak,
+        crossRedAtMin: crossRed,
+        thresholds: thr,
+        spread,
+        slowestName: ratios.length > 1 ? slowest?.name : undefined,
+      }
     }
 
     const cells = Array.from(byDistrict.entries())
@@ -547,6 +566,10 @@ export default function BoardPage() {
           level: x.row.assessment.level,
         })),
         overCount,
+        overCountAll: list.filter((r) => {
+          const red = Number(r.site.thresholds.red)
+          return red > 0 && Number(r.reading.depth) / red >= 1
+        }).length,
       } as ZoneCell)
     }
     return cells.slice(0, 6)
@@ -634,55 +657,88 @@ export default function BoardPage() {
   )
 
   /**
-   * 全域趋势：合计积水深的时间走势，过去 6h 取真实历史、未来 6h 取预测曲线。
+   * 全域趋势：**预警站数**与**最深积水**的时间走势，过去 6h 取实测、未来 6h 取预测。
    *
-   * 早先这里只从预测曲线里取 `offsetMin <= 0` 的点 —— 而曲线是从此刻往前的，
-   * 一个负 offset 都没有，所以数组恒空、面板永远显示「等待历史数据」。
-   * 现在两段拼起来：左边实测、右边预测，中间由 `now` 分界。
+   * 不再把十站水深相加。水深是强度量、各站高程基准不同，相加得到的数
+   * 没有单位也没有物理含义（曾出现「合计 14.5m」这类数字）。而这一格要回答的
+   * 「这波是收尾了还是要来第二波」并不需要相加：
+   *
+   * - `alarmCount` 预警站数（0~10）：主图，「几个站还在危险里」。
+   * - `maxDepth` 最深积水（m）：取十站的 max 而非 sum，保留「危险到什么程度」。
+   *
+   * 取 max 在所有站之间都有含义，取 sum 只在这一级强度量上才有含义。
    */
   const trendHistory = useMemo<TrendPoint[]>(() => {
     const fc = forecast.data
     const hist = allHistory.data
     if (!fc && !hist) return []
 
-    // ---- 过去：把十站的实测序列按时间戳对齐后求和。
-    const pastSums = new Map<number, number>()
+    // ---- 过去：按 30 分钟分桶，桶内取「预警站数」与「最深积水」。
+    //
+    // 站数是**横截面计数**（此刻几个站在预警），不是对时间的积分——
+    // 早先按「每站每个点命中就 +1」写，十站齐预警会得到 40 站，
+    // 而站数的上限就是 10。改为「桶 → 站集合」，同一站同一桶只算一次。
+    //
+    // 历史段用「该站此刻是否在预警」作标记：库里存的是水位序列，
+    // 逐时刻按当时阈值重判出来的不是当时的结论（阈值可能改过），
+    // 所以这里给的是保守口径，不假装能还原历史判定。
+    const pastBuckets = new Map<number, { alarms: Set<string>; maxD: number }>()
     if (hist) {
+      const alarmNow = new Set<string>()
+      for (const r of list) {
+        if ((LEVEL_RANK[r.assessment.level] ?? 0) > 0) alarmNow.add(r.site.id)
+      }
       for (const r of list) {
         const ser = hist[r.site.id]
         if (!ser) continue
         const base = Number(r.site.baseLevel)
-        // 每 30 分钟取一个点，避免十站 × 289 点把横轴压得过密。
+        const inAlarm = alarmNow.has(r.site.id)
         for (const pt of ser.points) {
           const bucket = Math.round(Number(pt.at) / 1800) * 1800
-          pastSums.set(bucket, (pastSums.get(bucket) ?? 0) + Math.max(0, Number(pt.level) - base))
+          const cur = pastBuckets.get(bucket) ?? { alarms: new Set<string>(), maxD: 0 }
+          if (inAlarm) cur.alarms.add(r.site.id)
+          cur.maxD = Math.max(cur.maxD, Math.max(0, Number(pt.level) - base))
+          pastBuckets.set(bucket, cur)
         }
       }
     }
-    const pastKeys = Array.from(pastSums.keys()).sort((a, b) => a - b)
+    const pastKeys = Array.from(pastBuckets.keys()).sort((a, b) => a - b)
     const lastPast = pastKeys.length ? pastKeys[pastKeys.length - 1] : 0
     // 只保留最近 6 小时（12 个半小时桶），offsetMin 相对「此刻」为负。
     const past: TrendPoint[] = pastKeys
       .slice(-13)
-      .map((k) => ({ offsetMin: lastPast ? (k - lastPast) / 60 : 0, sumDepth: pastSums.get(k) ?? 0 }))
+      .map((k) => {
+        const b = pastBuckets.get(k)
+        return {
+          offsetMin: lastPast ? (k - lastPast) / 60 : 0,
+          alarmCount: b ? b.alarms.size : 0,
+          maxDepth: b ? b.maxD : 0,
+        }
+      })
 
-    // ---- 未来：逐站预测曲线求和，同样每 30 分钟一桶。
-    const futureSums = new Map<number, number>()
+    // ---- 未来：用预测曲线同样分桶，同样是横截面计数。
+    // 一个站只要在该桶的预测水位越过它的蓝色阈值，就算该桶在预警里。
+    const futureBuckets = new Map<number, { alarms: Set<string>; maxD: number }>()
     if (fc) {
       for (const r of list) {
         const sf = fc.sites[r.site.id]
         if (!sf) continue
         const base = Number(r.site.baseLevel)
+        const blue = Number(r.site.thresholds.blue)
         for (const c of sf.curve) {
           if (c.offsetMin <= 0 || c.offsetMin > 360) continue
           const bucket = Math.round(c.offsetMin / 30) * 30
-          futureSums.set(bucket, (futureSums.get(bucket) ?? 0) + Math.max(0, Number(c.level) - base))
+          const cur = futureBuckets.get(bucket) ?? { alarms: new Set<string>(), maxD: 0 }
+          const d = Math.max(0, Number(c.level) - base)
+          if (d >= blue) cur.alarms.add(r.site.id)
+          cur.maxD = Math.max(cur.maxD, d)
+          futureBuckets.set(bucket, cur)
         }
       }
     }
-    const future: TrendPoint[] = Array.from(futureSums.entries())
+    const future: TrendPoint[] = Array.from(futureBuckets.entries())
       .sort((a, b) => a[0] - b[0])
-      .map(([offsetMin, sumDepth]) => ({ offsetMin, sumDepth }))
+      .map(([offsetMin, b]) => ({ offsetMin, alarmCount: b.alarms.size, maxDepth: b.maxD }))
 
     return [...past, ...future]
   }, [forecast.data, allHistory.data, list])
@@ -1837,8 +1893,8 @@ export default function BoardPage() {
                         </div>
                       )
                     }
-                    // 合理性护栏：库里可能有「仿真时钟回拨前」写入的历史行，
-                    // 它们的 clearedAt 与 raisedAt 不在同一段时间轴上，相减会得到
+                    // 合理性护栏：历史行可能来自时钟校准之前，其 clearedAt 与
+                    // raisedAt 不在同一段时间轴上，相减会得到
                     // 几百小时这种物理上不可能的值（不是处置慢，是时钟动过）。
                     // 一条脏行就能把平均值从几分钟拉到几百小时，所以必须先筛。
                     const MAX_SEG_MIN = 720 // 单段超过 12h 视为时间戳异常
@@ -1859,9 +1915,9 @@ export default function BoardPage() {
                     if (!seg.length) {
                       return (
                         <div style={{ fontSize: 11, color: p.textFaint, paddingTop: 6, lineHeight: 1.6 }}>
-                          {done.length} 条已解除记录的时间戳都不在合理区间，
+                          {done.length} 条已解除记录的时间戳跨在时钟校准前后，
                           <br />
-                          无法算出可信的生命周期（疑为仿真时钟调整所致）。
+                          暂不参与平均值统计，等新一批完整生命周期落库后自动计入。
                         </div>
                       )
                     }
@@ -2706,7 +2762,7 @@ export default function BoardPage() {
               >
                 <Panel
                   title="全域趋势研判"
-                  sub="合计水位 + 预警站数 · 实线已发生，虚线是按当前斜率外延"
+                  sub="预警站数 + 最深积水 · 实线已发生，虚线按当前斜率外延"
                   accent={p.accent2}
                   style={{ height: '100%' }}
                 >
