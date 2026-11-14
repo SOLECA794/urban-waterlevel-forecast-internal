@@ -52,7 +52,7 @@ tags:
   - name: notify
     description: 通知渠道配置与投递记录
   - name: sim
-    description: 演练控制（生产环境应关闭）
+    description: 降雨注入通道（生产部署应关闭）
   - name: ingest
     description: 数据接入（引擎推、或外部数据源推）
   - name: icm
@@ -820,7 +820,7 @@ paths:
   /api/sim/storm:
     post:
       tags: [sim]
-      summary: 注入一场暴雨（演练）
+      summary: 注入一段降雨过程（验收通道）
       description: |
         往模拟器未来窗口里塞一场降雨过程。60 倍速下 150 分钟仿真雨在 2.5 分钟墙钟内下完，
         注入后立刻轮询 `/overview` 会看到等级逐级上升。
@@ -855,12 +855,12 @@ paths:
   /api/sim/reset-water:
     post:
       tags: [sim]
-      summary: 排空积水（演练）
+      summary: 排空积水（验收通道）
       description: |
         把水位清零、把特征缓冲重写成「这座城市从没下过雨」，并**作废所有未结算预测**。
 
         为什么需要它：模拟器的退水极慢（管网满负荷、有漫溢拓宽，实测从 0.7 米退到
-        0.45 米要 11 小时仿真时间），演练等不到预警解除。作废未结算预测是因为那些预测
+        0.45 米要 11 小时仿真时间），状态机验收等不到预警解除。作废未结算预测是因为那些预测
         瞄准的是被抹掉的洪水曲线，留着结算会把在线 skill 抬成假数字。
 
         **生产环境应整段删除这个路由。**
@@ -1755,7 +1755,7 @@ components:
       enum: [admin, operator, viewer]
       description: |
         - `admin`：全部权限，含用户管理、规则、模型采纳、通知配置
-        - `operator`：可 ack、派单、推进处置、写备注、触发演练；不可改规则/用户/模型
+        - `operator`：可 ack、派单、推进处置、写备注、触发降雨注入；不可改规则/用户/模型
         - `viewer`：只读
 
     Thresholds:

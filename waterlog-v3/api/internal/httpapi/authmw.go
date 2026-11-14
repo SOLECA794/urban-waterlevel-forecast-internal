@@ -200,7 +200,7 @@ func summarize(r *http.Request) string {
 	case p == "/api/retrain":
 		return "触发模型重训"
 	case strings.HasPrefix(p, "/api/sim/"):
-		return "演练操作"
+		return "降雨过程注入"
 	case p == "/api/auth/login":
 		return "登录"
 	case p == "/api/auth/logout":

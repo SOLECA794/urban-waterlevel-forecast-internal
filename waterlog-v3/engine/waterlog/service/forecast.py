@@ -25,10 +25,15 @@ from waterlog.config import (HORIZONS_MIN, HORIZONS_STEPS, N_SITES, SITE_IDS, SI
 from waterlog.domain.correction import RollingCorrector
 from waterlog.domain.features import build_features, col
 from waterlog.ml.models import load_bundle
-from waterlog.domain.rules import assess_from_forecast
+from waterlog.domain.rules import assess_from_forecast, assess_observed
 from waterlog.infra.store import Dataset, EvalStore, load_rules
 
 SLOPE_COL = col("slope_1h")
+
+# 条款 8-4：实测判定的回溯窗口。取 3h —— 比最短预见期长、比最长预见期短，
+# 既够覆盖「涨起来又退下去」的一整段过程，又不会把昨天那场雨算进今天的告警。
+OBSERVED_WINDOW_MIN = 180
+OBSERVED_WINDOW_STEPS = OBSERVED_WINDOW_MIN // STEP_MIN
 
 
 # ------------------------------------------------------------------ 插值
@@ -143,7 +148,7 @@ class ForecastService:
 
     def warmup_corrector(self, ds: Dataset, span_steps: int = 288 * 3) -> None:
         """用最近 3 天的历史做一次"离线回放"，让修正器一开始就有误差样本，
-        否则刚启动的 1h 内修正强度是 0，演示时会显得"修正没生效"。"""
+        否则刚启动的 1h 内修正强度为 0，在线修正看起来像没生效。"""
         origins = np.arange(max(WARMUP_STEPS, len(ds) - span_steps), len(ds) - HORIZONS_STEPS[-1] - 1, 6)
         if origins.size == 0:
             return
@@ -240,6 +245,30 @@ class ForecastService:
             self.last_series[sid] = (float(now_level[i]), series5)
             warn = assess_from_forecast(sid, float(now_level[i]), series5,
                                         self.rules, self.rules.get("horizon_min", 180))
+            # ---- 条款 8-4：实测越限判定（与上面的预测研判并列，不改其语义）
+            # 回溯窗口取当前时刻往前 OBSERVED_WINDOW_STEPS 步，升序传入。
+            obs_end = origin + 1
+            obs_start = max(0, obs_end - OBSERVED_WINDOW_STEPS)
+            obs_series = ds.level[obs_start:obs_end, i].astype(float)
+            obs = assess_observed(sid, obs_series, self.rules, OBSERVED_WINDOW_MIN)
+            obs_level = obs.level if len(obs_series) >= 2 else "none"
+
+            # alarm_source：本次告警由哪一侧触发。两侧都报同一个站时叫 both，
+            # 这是最需要值班员立刻看的组合（既在下、预测还要涨）。
+            fc_hit = warn.level != "none"
+            ob_hit = obs_level != "none"
+            if fc_hit and ob_hit:
+                alarm_source = "both"
+            elif ob_hit:
+                alarm_source = "observed"
+            elif fc_hit:
+                alarm_source = "forecast"
+            else:
+                alarm_source = "none"
+
+            # observed_thr_name：实测判定所依据的那一档阈值名。
+            # peak_level 是 assess() 按实测峰值推出来的档位，超阈持续就是按它算的。
+            obs_thr_name = obs.peak_level
             warning = {
                 "site_id": sid, "level": warn.level, "score": warn.score,
                 "peak_value": round(warn.peak_value, 4), "peak_level": warn.peak_level,
@@ -250,6 +279,18 @@ class ForecastService:
                             "trend": round(warn.factors.trend_norm, 3),
                             "score": warn.score},
                 "thresholds": list(site.thresholds), "horizon_min": self.rules.get("horizon_min", 180),
+                # ---- 条款 8-4 新增：实测越限判定（与上面 4 个字段语义正交）
+                "observed_level": obs_level,
+                "observed_reason": obs.reason,
+                "observed_over_min": obs.duration_min,
+                "observed_thr_name": obs_thr_name,
+                "observed_score": round(obs.score, 4),
+                "observed_window_min": OBSERVED_WINDOW_MIN,
+                "observed_peak_value": round(obs.peak_value, 4),
+                # 此刻是否仍在超阈 —— 与 observed_level 是两个事实，
+                # 界面必须两个都说，否则「红色预警 + 当前未超阈」会自相矛盾。
+                "observed_still_over": bool(obs.__dict__.get("still_over", False)),
+                "alarm_source": alarm_source,
             }
             sf = SiteForecast(site_id=sid, now_level=float(now_level[i]),
                               horizons=hs, curve=curve, warning=warning,

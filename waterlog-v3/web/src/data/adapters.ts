@@ -14,6 +14,7 @@ import type {
   MetricsRespDTO,
   ModelVersionDTO,
   NotifyChannelDTO,
+  ObservedDTO,
   OverviewSiteDTO,
   RollingStatDTO,
   RuleImpactDTO,
@@ -36,6 +37,7 @@ import type {
   NotifyChannel,
   User,
   Assessment,
+  AlarmSource,
   CurvePoint,
   Decision,
   Delta,
@@ -51,6 +53,7 @@ import type {
   MetricsBundle,
   Meters,
   ModelVersion,
+  Observed,
   RainRate,
   Rate,
   Reading,
@@ -202,8 +205,31 @@ export function adaptOverviewSite(d: OverviewSiteDTO): {
       blockedBy: null,
       factors: adaptFactors(d.factors),
       horizonMin: num(d.horizon_min),
+      observed: d.observed ? adaptObserved(d.observed) : null,
+      alarmSource: asAlarmSource(d.alarm_source),
     },
   }
+}
+
+/** 实测越限判定（条款 8-4）。字段口径与后端 `Observed` 一一对应，不做换算。 */
+function adaptObserved(d: ObservedDTO): Observed {
+  return {
+    level: asLevel(d.level),
+    score: num(d.score),
+    reason: d.reason || '尚无实测判定依据',
+    overMin: num(d.over_min),
+    thrName: asLevel(d.thr_name),
+    windowMin: num(d.window_min),
+    peakValue: num(d.peak_value) as Depth,
+  }
+}
+
+/**
+ * 告警来源。后端只可能发四个值，但网络中间件、老版本缓存都可能给出别的字符串，
+ * 所以这里做白名单收敛而不是直接 as —— 一个非法值会让 interface 上的分支静默走空。
+ */
+function asAlarmSource(v: string | undefined): AlarmSource {
+  return v === 'observed' || v === 'forecast' || v === 'both' ? v : 'none'
 }
 
 function adaptFactors(d: FactorsDTO | undefined): Factors {
@@ -257,6 +283,10 @@ export function adaptAssessment(d: WarningDTO): Assessment {
     blockedBy: d.blocked_by ?? null,
     factors: adaptFactors(d.factors),
     horizonMin: num(d.horizon_min),
+    // 站点详情走的 WarningDTO 里没有实测判定（它挂在 overview 的 Observed 上），
+    // 所以这里如实填 null，不假装有。
+    observed: null,
+    alarmSource: 'none',
   }
 }
 

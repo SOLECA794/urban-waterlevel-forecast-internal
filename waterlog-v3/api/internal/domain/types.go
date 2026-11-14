@@ -41,6 +41,17 @@ type Warning struct {
 	Factors     Factors   `json:"factors"`
 	Thresholds  []float64 `json:"thresholds"`
 	HorizonMin  int       `json:"horizon_min"`
+
+	// 条款 8-4 实测越限判定。与上面 5 个预测字段语义正交：
+	// 预测侧回答"接下来会不会淹"，实测侧回答"现在是不是已经淹了"。
+	ObservedLevel     string  `json:"observed_level"`
+	ObservedReason    string  `json:"observed_reason"`
+	ObservedOverMin   int     `json:"observed_over_min"`
+	ObservedThrName   string  `json:"observed_thr_name"`
+	ObservedScore     float64 `json:"observed_score"`
+	ObservedWindowMin int     `json:"observed_window_min"`
+	ObservedPeakValue float64 `json:"observed_peak_value"`
+	AlarmSource       string  `json:"alarm_source"`
 }
 
 type Decision struct {
@@ -115,6 +126,24 @@ type OverviewSite struct {
 	HorizonMin int       `json:"horizon_min"`
 	Spark      []float64 `json:"spark"`
 	UpdatedAt  int64     `json:"updated_at"`
+
+	// 条款 8-4：实测越限判定（见 domain.Warning 的同名字段说明）。
+	Observed *Observed `json:"observed"`
+
+	// 告警来源：observed | forecast | both | none。
+	// both 是最需要立刻处置的组合——既已经淹了、预测还要涨。
+	AlarmSource string `json:"alarm_source"`
+}
+
+// Observed 是实测越限判定的结果。整体可为 nil，表示该站本轮没有实测判定。
+type Observed struct {
+	Level     string  `json:"level"`
+	Score     float64 `json:"score"`
+	Reason    string  `json:"reason"`
+	OverMin   int     `json:"over_min"`
+	ThrName   string  `json:"thr_name"`
+	WindowMin int     `json:"window_min"`
+	PeakValue float64 `json:"peak_value"`
 }
 
 // SiteMeta 是站点静态元数据。站点清单的唯一事实来源是 Python 的 config.py，

@@ -7,7 +7,7 @@ import (
 
 // ---------------------------------------------------------------- 引擎反代
 //
-// 规则、模型版本、重训、演练这些请求全部原样转发给 Python 引擎，
+// 规则、模型版本、重训、降雨注入这些请求全部原样转发给 Python 引擎，
 // 状态码与响应体也原样回传——前端就是照着引擎的响应写的。
 // Go 侧不做二次解释，唯一例外是转发成功后要广播 SSE（模型换了，曲线全变）。
 
@@ -42,7 +42,7 @@ func (s *Server) proxyPost(path string) http.HandlerFunc {
 	}
 }
 
-// command 转发一个无 body 的「命令型」POST（重训、演练注入、排空积水）。
+// command 转发一个无 body 的「命令型」POST（重训、注雨、排空积水）。
 func (s *Server) command(path string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		res, err := s.eng.PostEmpty(path, r.URL.RawQuery)

@@ -370,7 +370,7 @@ func TestRequireAIWaterToken(t *testing.T) {
 		t.Fatalf("X-AIWater-Token 正确应返回 200，实际 %d", w3.Code)
 	}
 
-	// 空 token = 放行（本机演示态）
+	// 空 token = 放行（同机联调态）
 	open := RequireAIWaterToken("")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		aiwaterOK(w, map[string]any{"ok": true})
 	}))

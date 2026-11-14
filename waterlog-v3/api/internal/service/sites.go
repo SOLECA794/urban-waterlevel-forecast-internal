@@ -2,7 +2,7 @@ package service
 
 import "waterlog-v3/api/internal/domain"
 
-// 内置站点副本：引擎没起来时 Go 也能独立运行（改前端样式、演示静态页面）。
+// 内置站点副本：引擎未就绪时 Go 仍可独立提供只读接口。
 // 数值与 engine/app/config.py 的 SITES 保持一致，改动要两边同步。
 
 // BuiltinSites 返回内置站点清单的副本，避免调用方改到包级变量。

@@ -16,7 +16,7 @@
 // 时间基准：
 //
 //	--basis=real       （默认）真实 Unix 秒，仅适用于 v3 已切 1 倍速真实时钟
-//	--basis=simulated  对齐到 --sim-now 指定的仿真时刻（demo 演示用）
+//	--basis=simulated  对齐到 --sim-now 指定的仿真时刻（联调与验收用）
 //
 // ⚠ 本命令未与对方平台联调（无测试地址/凭据），仅验证本地链路与协议适配正确性。
 package main

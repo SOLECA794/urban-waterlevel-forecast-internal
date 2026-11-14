@@ -102,6 +102,21 @@ export interface OverviewSiteDTO {
   reason: string
   spark: number[]
   updated_at: number
+  /** 条款 8-4 实测越限判定。后端没给时为 undefined（界面据此隐藏整块）。 */
+  observed?: ObservedDTO
+  /** observed | forecast | both | none —— 本次告警由哪一侧触发。 */
+  alarm_source?: string
+}
+
+/** 实测越限判定：回答"现在是不是已经淹了"，与预测研判语义正交。 */
+export interface ObservedDTO {
+  level: LevelDTO
+  score: number
+  reason: string
+  over_min: number
+  thr_name: LevelDTO
+  window_min: number
+  peak_value: number
 }
 
 export interface OverviewRespDTO {

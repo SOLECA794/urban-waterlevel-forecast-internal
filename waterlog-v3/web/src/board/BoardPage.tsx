@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { HorizonMin, Level, Meters, SimTime, SiteForecast, Thresholds } from '../domain'
 import {
   ALARM_LEVELS,
@@ -380,6 +380,15 @@ export default function BoardPage() {
   }, [stationRotation.length])
   const safeIdx = Math.min(idx, Math.max(0, stationRotation.length - 1))
   const cur: OverviewRow | undefined = stationRotation[safeIdx]
+  // 点曲线上的站点时跳过去：直接改轮播下标，而不是另立一个 selectedSiteId。
+  // 大屏里地图气泡、参数面板、决策面板都跟着 `cur` 走，复用它们即可。
+  const focusSite = useCallback(
+    (siteId: string) => {
+      const i = stationRotation.findIndex((r) => r.site.id === siteId)
+      if (i >= 0) setIdx(i)
+    },
+    [stationRotation],
+  )
   const detail = useSiteDetail(cur?.site.id ?? '')
   const curSite = sites.data?.find((x) => x.id === cur?.site.id) ?? cur?.site
   const asm = detail.data?.forecast?.assessment ?? cur?.assessment
@@ -496,33 +505,49 @@ export default function BoardPage() {
       .filter((c) => c.series.length > 0)
       .sort((a, b) => LEVEL_RANK[b.topLevel] - LEVEL_RANK[a.topLevel] || b.maxDepth - a.maxDepth)
 
-    // 最后一格：全域合计。把十站的「水位减基准」加起来，得到全城累计积水深。
-    // 它回答的是「这波是面上的雨还是点上的雨」——十站各自一格时看不出来。
+    // 最后一格：**各站超阈倍数排行**，取代原来的「十站水深相加」。
+    //
+    // 相加得到的不是「全域合计水位」——水深是强度量，各站高程基准不同，
+    // 加起来是个没有单位的数（曾出现 108 这种数字，演示时必被追问）。
+    //
+    // 超阈倍数 = 当前积水深 / 该站红阈，无量纲、跨站可比：
+    //   1.0 = 刚好到红阈，1.5 = 超红阈 50%。它直接回答「谁真正危险、危险多少」。
+    // 长条按倍数画、红线固定在 1.0 处，所以「越没越过红线」一眼可见。
     if (cells.length > 0 && cells.length < 6) {
-      const sumPts = new Map<number, number>()
-      for (const r of list) {
-        const sf = fc.sites[r.site.id]
-        if (!sf) continue
-        const base = Number(r.site.baseLevel)
-        for (const c of sf.curve) sumPts.set(c.offsetMin, (sumPts.get(c.offsetMin) ?? 0) + (Number(c.level) - base))
-      }
-      const pts = Array.from(sumPts.entries()).sort((a, b) => a[0] - b[0]).map(([offsetMin, level]) => ({ offsetMin, level }))
-      if (pts.length >= 2) {
-        let pk: ZoneCell['peak'] = null
-        for (const pt of pts) if (!pk || pt.level > pk.level) pk = { level: pt.level, atMin: pt.offsetMin, name: '全域合计' }
-        const sumNow = list.reduce((a, r) => a + Number(r.reading.depth), 0)
-        cells.push({
-          district: '全域合计',
-          series: [{ siteId: '_all', name: '全域合计', district: '全域合计', level: worst, now: sumNow, points: pts }],
-          topLevel: worst,
-          maxDepth: sumNow,
-          peak: pk,
-          crossRedAtMin: null,
-          // 合计值没有单一阈值：把它当成「十站阈值之和」没有业务含义，
-          // 所以这里给一组不可能被触发的值，图上的阈值带自然消失。
-          thresholds: { blue: 99, yellow: 99, orange: 99, red: 99 },
+      const ranked = list
+        .map((r) => {
+          const red = Number(r.site.thresholds.red)
+          const depth = Number(r.reading.depth)
+          return { row: r, ratio: red > 0 ? depth / red : 0 }
         })
-      }
+        .sort((a, b) => b.ratio - a.ratio)
+        .slice(0, 5)
+
+      const overCount = ranked.filter((x) => x.ratio >= 1).length
+      const maxRatio = ranked.length ? ranked[0].ratio : 0
+      const topName = ranked.length ? ranked[0].row.site.name : ''
+      cells.push({
+        district: '全域合计',
+        series: [],
+        topLevel: worst,
+        // 这一格不画曲线，maxDepth 借用来传「最大超阈倍数」，供标题行显示。
+        maxDepth: maxRatio,
+        peak: topName ? { level: maxRatio, atMin: 0, name: topName } : null,
+        crossRedAtMin: null,
+        // 排行里已含各站自己的红阈，这一格不再需要统一的阈值尺。
+        thresholds: { blue: 99, yellow: 99, orange: 99, red: 99 },
+        // 排行数据随格一起传下去（ZoneCell 上新增的可选字段，见 ZoneGrid.tsx）。
+        ranking: ranked.map((x) => ({
+          siteId: x.row.site.id,
+          name: x.row.site.name,
+          district: x.row.site.district,
+          ratio: x.ratio,
+          depth: Number(x.row.reading.depth),
+          red: Number(x.row.site.thresholds.red),
+          level: x.row.assessment.level,
+        })),
+        overCount,
+      } as ZoneCell)
     }
     return cells.slice(0, 6)
   }, [forecast.data, list, worst])
@@ -2509,7 +2534,7 @@ export default function BoardPage() {
                   >
                     <Panel
                       title={cell.district === '全域合计' ? '全域合计' : cell.district}
-                      sub={cell.district === '全域合计' ? '十站水位合计 · 看是面上的雨还是点上的雨' : `${cell.series.length} 站 · 12h 预测`}
+                      sub={cell.district === '全域合计' ? '十站超阈倍数排行 · 回答「全城先管哪个」' : `${cell.series.length} 站 · 12h 预测`}
                       accent={p.level[cell.topLevel]}
                       style={{ height: '100%' }}
                     >
@@ -2523,6 +2548,8 @@ export default function BoardPage() {
                         cell={cell}
                         domain={cell.district === '全域合计' ? ownDomain(cell) : zoneDomain}
                         p={p}
+                        activeSiteId={cur?.site.id}
+                        onPickSite={focusSite}
                       />
                     </Panel>
                   </Widget>

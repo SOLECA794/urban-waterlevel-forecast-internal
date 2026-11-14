@@ -166,7 +166,7 @@ func pagingFrom(body aiwaterPagingBody, r *http.Request) aiwaterPaging {
 // X-AIWater-Token 头，方便对方的回调通道（只能加自定义头、不能改
 // Authorization 头时）复用同一套校验。
 //
-// token 为空时直接放行：本机演示时多配一个密钥只是多一处会配错的地方。
+// token 为空时直接放行：同机部署时多配一个密钥只是多一处会配错的地方。
 // 一旦对外暴露，这个值必须设置。
 func RequireAIWaterToken(token string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

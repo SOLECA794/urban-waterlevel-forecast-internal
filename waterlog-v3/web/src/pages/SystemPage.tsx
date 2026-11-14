@@ -48,8 +48,8 @@ const APIS: { m: string; path: string; desc: string }[] = [
   { m: 'GET', path: '/api/rules', desc: '当前研判规则' },
   { m: 'POST', path: '/api/rules/preview', desc: '用同一条已发布曲线预演规则改动的影响' },
   { m: 'GET', path: '/api/events', desc: 'SSE：telemetry / forecast / warning / rules' },
-  { m: 'POST', path: '/api/sim/storm', desc: '演练：注入一场暴雨（peak mm/h × dur 步）' },
-  { m: 'POST', path: '/api/sim/reset-water', desc: '演练：排空积水并清空天空，用于验证解除路径' },
+  { m: 'POST', path: '/api/sim/storm', desc: '注入一段降雨过程（peak mm/h × dur 步）' },
+  { m: 'POST', path: '/api/sim/reset-water', desc: '排空积水并终止降水，用于验证解除路径' },
 ]
 
 export function SystemPage() {
@@ -192,10 +192,10 @@ export function SystemPage() {
           </div>
         </div>
 
-        {/* 演练 */}
+        {/* 降雨注入 */}
         <div className="card p-4">
           <SectionHead
-            title="暴雨演练"
+            title="降雨过程注入"
             sub="模拟器按真实节奏下雨，等雨来要几个小时，所以给一个注入入口"
             icon="zap"
           />

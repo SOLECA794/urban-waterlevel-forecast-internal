@@ -13,7 +13,7 @@ import (
 
 // Engine 是 Python 引擎的 HTTP 客户端。
 //
-// Go 侧不做任何计算：规则、模型版本、重训、演练注入这些请求全部原样转发，
+// Go 侧不做任何计算：规则、模型版本、重训、降雨注入这些请求全部原样转发，
 // 状态码与响应体也原样回传——前端就是照着引擎的响应写的。
 type Engine struct {
 	baseURL string
@@ -149,7 +149,7 @@ func (e *Engine) PostJSON(path, rawQuery string, body []byte) (*ProxyResult, err
 	return &ProxyResult{Status: resp.StatusCode, Body: resp.Body}, nil
 }
 
-// PostEmpty 发一个无 body 的 POST（演练注入、重训这类"命令型"请求）。
+// PostEmpty 发一个无 body 的 POST（注雨、重训这类"命令型"请求）。
 func (e *Engine) PostEmpty(path, rawQuery string) (*ProxyResult, error) {
 	url := e.baseURL + path
 	if rawQuery != "" {

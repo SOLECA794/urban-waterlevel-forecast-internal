@@ -853,7 +853,7 @@ export function TrendBoard({
   const px = (x: number) => padL + (x / geo.span) * (W - padL - 12)
   const py = (d: number) => padT + plotH - (Math.min(d, maxD) / maxD) * plotH
   // gap 是「相邻采样落差超过这个值就断开」。
-  // 演练用的「排空积水」会让水位在一格之内归零，直连会在图上画出一道垂直断崖，
+  // 「排空积水」会让水位在一格之内归零，直连会在图上画出一道垂直断崖，
   // 看起来像模型崩了；断开成两段，读者看到的是「这里有一次人工清零」。
   const line = (pts: { x: number; y: number }[], gap = 0) => {
     let d = ''

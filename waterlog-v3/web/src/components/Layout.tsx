@@ -50,7 +50,7 @@ const GROUPS: { title: string; items: NavEntry[] }[] = [
   {
     title: '系统',
     items: [
-      { to: '/system', label: '系统状态', icon: 'activity', hint: '链路、接口与暴雨演练' },
+      { to: '/system', label: '系统状态', icon: 'activity', hint: '链路、接口与降雨注入' },
       { to: '/board', label: '大厅大屏', icon: 'activity', hint: '无交互轮换展示，适合常驻大屏' }, { to: '/admin', label: '管理台', icon: 'shield', hint: '账号、审计与推送渠道' },
     ],
   },

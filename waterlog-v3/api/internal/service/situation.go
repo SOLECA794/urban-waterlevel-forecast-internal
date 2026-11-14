@@ -156,6 +156,19 @@ func (s *Service) Overview() ([]domain.OverviewSite, int64, error) {
 				row.Factors = sf.Warning.Factors
 				row.PeakLevel = sf.Warning.PeakLevel
 				row.HorizonMin = sf.Warning.HorizonMin
+				// 条款 8-4：实测越限判定透传。引擎没给就不构造（界面据此隐藏）。
+				if sf.Warning.ObservedLevel != "" {
+					row.Observed = &domain.Observed{
+						Level:     sf.Warning.ObservedLevel,
+						Score:     sf.Warning.ObservedScore,
+						Reason:    sf.Warning.ObservedReason,
+						OverMin:   sf.Warning.ObservedOverMin,
+						ThrName:   sf.Warning.ObservedThrName,
+						WindowMin: sf.Warning.ObservedWindowMin,
+						PeakValue: sf.Warning.ObservedPeakValue,
+					}
+				}
+				row.AlarmSource = sf.Warning.AlarmSource
 			}
 		}
 		// 最近 3h 火花线（20 个点，压缩成等间隔）

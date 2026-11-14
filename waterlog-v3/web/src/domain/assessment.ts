@@ -41,12 +41,31 @@ export interface Assessment {
   readonly blockedBy: string | null
   readonly factors: Factors
   readonly horizonMin: number
+  /** 条款 8-4 实测越限判定。null 表示后端未提供。 */
+  readonly observed: Observed | null
+  /** 本次告警由哪一侧触发。both = 既已淹、预测还要涨，最该立刻处置。 */
+  readonly alarmSource: AlarmSource
+}
+
+export type AlarmSource = 'observed' | 'forecast' | 'both' | 'none'
+
+/** 实测越限判定的结果（条款 8-4）。 */
+export interface Observed {
+  readonly level: Level
+  readonly score: number
+  readonly reason: string
+  readonly overMin: number
+  readonly thrName: Level
+  readonly windowMin: number
+  readonly peakValue: Depth
 }
 
 export const EMPTY_ASSESSMENT: Assessment = {
   level: 'none',
   score: 0,
   peakValue: 0 as Depth,
+  observed: null,
+  alarmSource: 'none',
   peakLevel: 'none',
   peakAtMin: null,
   durationMin: 0,

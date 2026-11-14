@@ -382,11 +382,10 @@ def eval_pairs(site: str | None = None, hours: int = 12) -> dict:
 
 @app.post("/sim/storm")
 def sim_storm(peak: float = 90.0, dur: int = 24) -> dict:
-    """演练用：立刻注入一场暴雨。
+    """立即注入一段降雨过程（验收与调试通道，生产部署默认不开放）。
 
-    真实系统里没有这个接口（雨是天上下的），这里是为了让演示不必等雨：
-    注入后 1~3 分钟内就能看到预警从“无”升到黄/橙，退水后再转“已解除”，
-    完整走一遍四态闭环。
+    真实降水由气象源驱动，这个接口只用于在没有降雨条件时验证
+    「阈值触发 → 分级预警 → 退水解除」这条链路的完整性。
     """
     sim: Simulator = STATE["sim"]
     if not (3.0 <= peak <= 300.0):
@@ -400,11 +399,11 @@ def sim_storm(peak: float = 90.0, dur: int = 24) -> dict:
 
 @app.post("/sim/reset-water")
 def sim_reset_water(clear_sky: bool = True) -> dict:
-    """演练用：把所有站点积水清零，并立刻重算一轮研判。
+    """把所有站点积水清零并立即重算一轮研判（验收与调试通道）。
 
-    注入暴雨后水位会在阈值之上待十几个小时（管网满负荷、退水慢），
-    验收四态闭环时不必干等：clear_sky=True 顺带把天上的雨停掉，
-    这样「升 → 解除」整个过程几分钟内就能确定性地走完。
+    退水过程受管网排水能力限制，实战中会在阈值之上持续数小时；
+    验收链路时需要可重复的确定性条件：clear_sky=True 同时终止降水过程，
+    使「抬升 → 解除」的完整状态迁移可在受控时间内复现。
     """
     sim: Simulator = STATE["sim"]
     svc: ForecastService = STATE["svc"]

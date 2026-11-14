@@ -257,7 +257,7 @@ func (s *Server) runAIWaterTask(ctx context.Context, taskID string) {
 	}
 
 	// 给状态迁移留一点观察窗口：对方轮询 A-7 时才看得到 running 这个中间态。
-	// 这是演示环境里唯一能看出「异步」的地方；真实环境里这一步被真正的计算占用。
+	// 这是任务队列里唯一能看出「异步」的地方；生产环境这一步被真实计算占用。
 	select {
 	case <-ctx.Done():
 		return

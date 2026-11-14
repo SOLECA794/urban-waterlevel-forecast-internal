@@ -10,7 +10,7 @@ package httpapi
 //
 // 2. **必须验签**：请求头 X-AIWater-Signature 携带
 //    HMAC-SHA256(secret, 原始报文体) 的十六进制值。
-//    没配密钥时放行并标注 signatureVerified=false（本机演示态）；
+//    没配密钥时放行并标注 signatureVerified=false（同机联调态）；
 //    配了密钥就必须验，否则事件来源不可信。
 //
 // 3. **收到必须返回 HTTP 200**：对方平台按 HTTP 状态码判定投递是否成功，
@@ -222,7 +222,7 @@ func aiwaterEventReply(w http.ResponseWriter, verified bool, msg string, data *a
 // verifyAIWaterSignature 校验请求签名。
 //
 // 未配置密钥时返回 (false, nil)：放行但标注未验签。
-// 这是本机演示态的取舍——多配一个密钥只是多一处会配错的地方。
+// 这是同机联调态的取舍——多配一个密钥只是多一处会配错的地方。
 // 一旦对外暴露，WL_AIWATER_EVENT_SECRET 必须设置。
 func (s *Server) verifyAIWaterSignature(r *http.Request, body []byte) (bool, error) {
 	secret := s.cfg.AIWaterEventSecret

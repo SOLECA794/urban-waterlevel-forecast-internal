@@ -620,7 +620,7 @@ node scripts/shoot-board.mjs --themes light --scenes 0
 | 值班台 | 这 12 小时还剩什么没完：交接事项按紧急度排序并给出下一步动作、本班事件流、本班预测质量 |
 | 模型评估 | 模型到底准不准，比基线强多少，错在哪，怎么换版本 |
 | 规则配置 | 研判规则改成什么样会变成什么结果（改之前先预演） |
-| 系统状态 | 谁在线、接口有哪些、演练入口在哪 |
+| 系统状态 | 谁在线、接口有哪些、降雨注入入口在哪 |
 | 管理台 | 谁能登录、谁在什么时候改了什么、告警推到哪去 |
 
 前端分五层，页面只做布局：
@@ -694,8 +694,8 @@ domain/       15 个纯模块：品牌类型、时间、等级、研判、规则
 | PUT | `/api/notify/channels/{name}` | admin | 改推送渠道 |
 | GET | `/api/notify/deliveries` | admin | 推送记录 |
 | POST | `/api/notify/test` | admin | 发一条测试推送 |
-| POST | `/api/sim/storm?peak=&dur=` | operator | 注入暴雨（演示不必等雨） |
-| POST | `/api/sim/reset-water?clear_sky=true` | operator | 排空积水并停雨（演练专用，见下文） |
+| POST | `/api/sim/storm?peak=&dur=` | operator | 注入一段降雨过程（验收通道，生产不开放） |
+| POST | `/api/sim/reset-water?clear_sky=true` | operator | 排空积水并终止降水（验收通道，见下文） |
 | GET | `/api/events` | viewer | SSE：telemetry / forecast / warning / rules |
 | POST | `/api/ingest/telemetry` | token | 引擎推遥测（`WL_INGEST_TOKEN` 为空则不校验） |
 | POST | `/api/ingest/forecast` | token | 引擎推预测快照 |
@@ -708,8 +708,8 @@ domain/       15 个纯模块：品牌类型、时间、等级、研判、规则
 | 角色 | 能做什么 | 典型是谁 |
 |---|---|---|
 | `admin` 系统管理员 | 改研判规则、切换模型版本、触发重训、管账号、看审计、配推送 | 系统负责人，一个月动两次 |
-| `operator` 值班员 | 确认预警、派单、推进处置、写备注、改规则前预演、触发演练 | 值班室，一直在点 |
-| `viewer` 只读 | 只看，不能写 | 领导、外部门、演示 |
+| `operator` 值班员 | 确认预警、派单、推进处置、写备注、改规则前预演、触发降雨注入 | 值班室，一直在点 |
+| `viewer` 只读 | 只看，不能写 | 领导、外部门、只读投屏 |
 
 几条刻意的约束：
 
@@ -762,7 +762,7 @@ domain/       15 个纯模块：品牌类型、时间、等级、研判、规则
 ## 验收
 
 ```powershell
-.\scripts\acceptance.ps1                  # 完整验收（含暴雨演练，约 12 分钟）
+.\scripts\acceptance.ps1                  # 完整验收（含降雨注入与状态机全链路，约 12 分钟）
 .\scripts\acceptance.ps1 -SkipStorm       # 只验接口契约与数据自洽性（约 40 秒）
 .\scripts\acceptance.ps1 -Shots           # 顺带重截 9 个页面
 .\scripts\acceptance.ps1 -User x -Password y   # 换验收用的账号
@@ -800,7 +800,7 @@ domain/       15 个纯模块：品牌类型、时间、等级、研判、规则
 没有 `reset-water`，验收四态闭环里的「条件消失 → 自动解除」就只能干等，
 等不到就报 FAIL，而真正坏掉的是测试设计而不是系统。
 
-所以它是**演练专用**的：清零各站水深、把特征缓冲重写成「这座城市从没下过雨」、
+所以它是**验收通道专用**的：清零各站水深、把特征缓冲重写成「这座城市从没下过雨」、
 并作废清零前发出的未结算预测（那些预测瞄准的是被抹掉的那条洪水曲线，
 留着结算只会把在线 skill 抬成一个漂亮但假的数字）。
 `dropped_pending` 字段会告诉你作废了多少条。

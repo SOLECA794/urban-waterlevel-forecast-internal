@@ -51,7 +51,7 @@ class Storm:
         return self.peak * shape
 
 
-# 演练清零后保证的干窗口长度（步）：60 步 = 5 小时，足够让水位落回阈值以下
+# 清零后保证的干窗口长度（步）：60 步 = 5 小时，足够让水位落回阈值以下
 QUIET_STEPS = 60
 
 
@@ -194,7 +194,7 @@ class Simulator:
 
     def inject_storm(self, peak: float = 90.0, dur: int = 24,
                      rise: float = 0.30, tail: float = 0.50) -> Storm:
-        """演练用：在当前时刻插入一场暴雨。
+        """在当前时刻插入一段降雨过程（验收通道用）。
 
         必须先把已生成的雨量序列从当前步截断重算：ensure() 只在“生成”某一步时
         才累加 storms，已经算好的未来雨量不会因为事后 append 一场雨而改变。
@@ -209,13 +209,13 @@ class Simulator:
         return st
 
     def reset_water(self, clear_sky: bool = False) -> int:
-        """演练用：把所有站点积水清零（视为已排空）。
+        """把所有站点积水清零（视为已完成排水）。
 
         clear_sky=True 时连天上的雨一起停掉：把已生成的雨量序列截断到当前步、
         清空未发生的暴雨队列，并让下一场雨至少在 QUIET_STEPS 之后才到达。
         这样「清零 → 干窗口 → 预警解除」不会因为天上还在下而反复。
 
-        真实系统当然没有这个能力，它存在的唯一目的是让四态闭环可被确定性验收。
+        生产环境不提供该能力；它存在的唯一目的是让预警状态机可被确定性验证。
         """
         self.h = np.zeros_like(self.h)
         if clear_sky:

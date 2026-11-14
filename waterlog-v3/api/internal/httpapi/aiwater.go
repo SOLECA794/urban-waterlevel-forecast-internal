@@ -587,7 +587,7 @@ func aiwaterWarningStatus(state string) string {
 // aiwaterWarningRecords 处理 A-3「预警记录分页查询」。
 //
 // 上限说明：一次最多取 1000 条再在内存里过滤分页。
-// 预警表在演示环境里是几十到几百条量级，这个上限足够；
+// 预警表常规量级为几十到几百条，这个上限足够；
 // 真到十万级需要给 store 加带条件的 count 与 limit，那是另一件事。
 func (s *Server) aiwaterWarningRecords(w http.ResponseWriter, r *http.Request) {
 	var q aiwaterWarningQuery

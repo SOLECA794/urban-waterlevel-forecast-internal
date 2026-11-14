@@ -70,7 +70,7 @@ type TimeBasis string
 
 const (
 	TimeBasisReal      TimeBasis = "real"      // 用 monitorTime 的真实 Unix 秒（生产 1 倍速）
-	TimeBasisSimulated TimeBasis = "simulated" // 对齐到 v3 仿真时钟（仅 demo 演示）
+	TimeBasisSimulated TimeBasis = "simulated" // 对齐到 v3 仿真时钟（验收与联调用）
 )
 
 type MapConfig struct {
@@ -159,7 +159,7 @@ func MapRealtime(records []MonitorRecord, cfg Config, points PointMap, mc MapCon
 
 		var ts int64
 		if mc.Basis == TimeBasisSimulated {
-			ts = simTS // demo：整批对齐到当前仿真时刻，不引入真实时间污染
+			ts = simTS // 整批对齐到当前仿真时刻，避免真实时间污染
 		} else {
 			t, err := ParseICMTime(r.MonitorTime)
 			if err != nil {

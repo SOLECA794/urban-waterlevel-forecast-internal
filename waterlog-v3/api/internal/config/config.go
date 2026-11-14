@@ -13,7 +13,7 @@ import (
 
 // 默认值。改这里等于改部署默认行为，注意与 start.ps1 / 文档同步。
 const (
-	// DefaultHost 默认只听本机：开发/演示都在同一台机器上，不需要对外。
+	// DefaultHost 默认只听本机：引擎与 API 同机部署，无需对外暴露。
 	DefaultHost           = "127.0.0.1"
 	DefaultPort           = 8200
 	DefaultDBPath         = "data/waterlog.db"
@@ -40,7 +40,7 @@ type Config struct {
 	Port int
 	// DBPath SQLite 文件路径。
 	DBPath string
-	// EngineURL Python 引擎地址，规则/重训/演练等请求反向代理过去。
+	// EngineURL Python 引擎地址，规则/重训/控制类请求反向代理过去。
 	EngineURL string
 	// WebDir 前端构建产物目录，存在就由 Go 托管，不存在就退化成一句提示。
 	WebDir string

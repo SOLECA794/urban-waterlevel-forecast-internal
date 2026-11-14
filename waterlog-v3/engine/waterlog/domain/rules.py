@@ -80,8 +80,14 @@ def _ratio(peak_m: float, thr: tuple[float, float, float, float]) -> float:
 
 
 def assess(site_id: str, level_series: np.ndarray, rules: dict,
-           horizon_min: int | None = None) -> WarningResult:
-    """level_series: 当前时刻起、等间隔 STEP_MIN 的水位序列（含 t0 与未来）。"""
+           horizon_min: int | None = None,
+           apply_min_duration: bool = True) -> WarningResult:
+    """level_series: 当前时刻起、等间隔 STEP_MIN 的水位序列（含 t0 与未来）。
+
+    apply_min_duration: 是否应用「持续门槛降级」。预测序列必须应用（还没发生的
+    事不能凭一瞬就报高级），实测序列不应用（已经漫过去了是既成事实）——
+    见 assess_observed() 的口径说明。
+    """
     site = SITE_BY_ID[site_id]
     thr = site.thresholds
     hmin = horizon_min or int(rules.get("horizon_min", 180))
@@ -126,8 +132,9 @@ def assess(site_id: str, level_series: np.ndarray, rules: dict,
             level = name
 
     blocked = None
-    # 持续时间门槛：峰值到了但没持续够，不允许报这么高的等级
-    if level != "none" and duration_min < need:
+    # 持续时间门槛：峰值到了但没持续够，不允许报这么高的等级。
+    # 实测序列不走这道闸——水已经漫过阈值是既成事实（见 apply_min_duration）。
+    if apply_min_duration and level != "none" and duration_min < need:
         blocked = f"超阈持续 {duration_min}min < {need:.0f}min 门槛，降级"
         allowed = [name for name in LEVELS if duration_min >= float(min_dur.get(name, 0))]
         cap = allowed[-1] if allowed else "none"
@@ -168,7 +175,66 @@ def assess(site_id: str, level_series: np.ndarray, rules: dict,
     )
 
 
+def assess_observed(site_id: str, observed_levels: np.ndarray, rules: dict,
+                    window_min: int | None = None) -> WarningResult:
+    """条款 8-4：对**实测回溯序列**做越限判定。
+
+    与 `assess_from_forecast` 的区别在输入语义，不在算法：
+      - 预测判定喂的是 `[现在, +1h, +3h, +6h, +12h]`，回答「未来会不会淹」；
+      - 实测判定喂的是 `[3h前, ..., 现在]`，回答「现在是不是已经淹了、淹了多久」。
+
+    两者共用同一套三因子与分档规则，所以「同一个站，预测说橙、实测说蓝」
+    这种组合是合法且有意义的：说明雨还没落到地上，或者刚下但还没汇起来。
+
+    `observed_levels` 必须按时间升序（最早在前、当前最后），这样 `assess()`
+    内部的 `slope = (末 - 首) / 小时数` 天然就是「过去这段涨了多少 m/h」，
+    与预测序列的斜率方向语义一致，不需要翻转。
+    """
+    series = np.asarray(observed_levels, dtype=float)
+    # 实测侧取消持续门槛降级：水已经漫过某档阈值就是既成事实，
+    # 不该因为「还没泡够 60 分钟」把红色压成黄色。趋势跨档与等级兜底仍然生效。
+    res = assess(site_id, series, rules, window_min, apply_min_duration=False)
+
+    # ---- 重算「连续超阈」：assess() 给的是窗口内累计，实测侧要的是当前这一段。
+    # 从序列末尾往前数，直到第一次跌破 peak_level 对应阈值为止。
+    site = SITE_BY_ID[site_id]
+    thr_now = site.thresholds[max(LEVEL_RANK.get(res.peak_level, 1) - 1, 0)]
+    h = series - site.base_level
+    run = 0
+    for v in h[::-1]:
+        if v >= thr_now:
+            run += 1
+        else:
+            break
+    res.duration_min = run * STEP_MIN
+    # 顺手记一个「这一段是不是就从窗口开头一路超下来的」——
+    # 是的话说明雨还在持续，界面可以据此说「仍在超阈」而不是「超阈已 X 分钟」。
+    res.__dict__['over_run_at_edge'] = (run == len(h))
+
+    # assess() 的 reason 是照「未来序列」写的（「峰值 Xm（第 Ymin）」指的是
+    # 预测序列里第 Y 分钟会到峰值）。对回溯序列必须改口径，否则值班员会
+    # 把「过去 3h 里最高出现在第 120min」误读成「还有 2 小时才到峰值」。
+    n = len(series)
+    span_min = (n - 1) * STEP_MIN
+    ago_min = (n - 1 - int(round(res.peak_at_min / STEP_MIN))) * STEP_MIN
+    rise = float(series[-1] - series[0])
+    # 「连续超阈」是当前这一段，不是累计——见上面的重算说明。
+    # 文案必须同时回答两个问题：曾达哪一档、现在什么状态。只报 level 会在
+    # 「涨过又退了」的站上产生「红色预警但当前未超阈」这种自相矛盾的读感。
+    if not res.__dict__.get('still_over'):
+        now_txt = "现已回落至阈值以下"
+    elif res.__dict__.get('over_run_at_edge'):
+        now_txt = f"目前仍在超阈，已持续 {res.duration_min}min"
+    else:
+        now_txt = f"目前仍在超阈 {res.duration_min}min"
+    res.reason = (f"实测近 {span_min}min 峰值 {res.peak_value:.2f}m（曾达{LEVEL_LABEL[res.peak_level]}，"
+                  f"出现在 {ago_min}min 前）、{now_txt}、"
+                  f"该窗涨跌 {rise:+.2f}m → 综合分 {res.score:.2f} → {LEVEL_LABEL[res.level]}")
+    return res
+
+
 def assess_from_forecast(site_id: str, current_level: float, forecast_levels: list[float],
                          rules: dict, horizon_min: int | None = None) -> WarningResult:
     series = np.concatenate([[current_level], np.asarray(forecast_levels, dtype=float)])
-    return assess(site_id, series, rules, horizon_min)
+    # 预测侧始终应用持续门槛：这是「提前预警」与「虚惊一场」之间的分界线。
+    return assess(site_id, series, rules, horizon_min, apply_min_duration=True)

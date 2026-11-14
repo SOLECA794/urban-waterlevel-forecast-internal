@@ -80,7 +80,7 @@ ICM R1/R2 → DataSource.Fetch → MapRealtime（编码/时间/字段映射）
 【事实】v3 是 60 倍速仿真时钟（`NowTS() = MAX(telemetry.ts)`），对方 `monitorTime` 是真实 ISO 时间，两者不在同一时间轴上。
 
 代码里的处理：
-- `MapConfig.Basis` 显式二选一：`real`（真实 Unix 秒，仅适用于 v3 已切 1 倍速真实时钟）/ `simulated`（整批对齐 `SimNow`，demo 演示用）。
+- `MapConfig.Basis` 显式二选一：`real`（真实 Unix 秒，仅适用于 v3 已切 1 倍速真实时钟）/ `simulated`（整批对齐 `SimNow`，联调与验收用）。
 - `MapReport` 始终带 `timeBasis` 与告警文案，**禁止静默混用**。
 - `SyncReport` 在写入后追加告警，提示核对时间基准。
 - 【未做】真实时钟 ↔ 仿真时钟的长期对齐策略、生产 1 倍速切换 —— 属后面批次。
