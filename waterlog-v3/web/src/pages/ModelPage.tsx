@@ -34,6 +34,8 @@ import { StatCard } from '../components/primitives/Stat'
 import { Icon } from '../components/primitives/Icons'
 import { Tag } from '../components/domain/LevelChip'
 import { FONT, SERIES, T } from '../utils/tokens'
+import { SiteDrawer } from '../components/interactive/StationDetail'
+import { Glossary } from '../components/interactive/Tooltip'
 
 /**
  * 模型评估与版本治理。
@@ -55,6 +57,9 @@ export function ModelPage() {
   const pairs = useEvalPairs(12)
   const decisions = useDecisions(40)
   const [msg, setMsg] = useState<string | null>(null)
+  // 决策日志里点站点 → 开抽屉。这一条日志只说了「怎么算的」，
+  // 用户接下来必问的是「算出来的数是多少、准不准」——那在站点抽屉里。
+  const [siteId, setSiteId] = useState<string | null>(null)
 
   if (metrics.isLoading || !metrics.data) {
     return (
@@ -152,7 +157,7 @@ export function ModelPage() {
 
       {/* 四模型对比 */}
       <div className="grid grid-cols-[1fr_1fr] gap-4 items-start">
-        <div className="card p-4">
+        <div className="card p-4" data-tour="model-compare">
           <SectionHead
             title="四模型对比（全样本）"
             sub="同一批验证样本、同一套特征，只换模型族"
@@ -351,7 +356,7 @@ export function ModelPage() {
               </thead>
               <tbody>
                 {decisions.data.map((d, i) => (
-                  <DecisionRowView key={`${d.ts}-${d.siteId}-${i}`} d={d} />
+                  <DecisionRowView key={`${d.ts}-${d.siteId}-${i}`} d={d} onPick={setSiteId} />
                 ))}
               </tbody>
             </table>
@@ -360,12 +365,19 @@ export function ModelPage() {
       </div>
 
       {/* 方法论 */}
+      <SiteDrawer
+        siteId={siteId}
+        onClose={() => setSiteId(null)}
+        onPick={setSiteId}
+        width={470}
+      />
+
       <div className="card p-4">
         <SectionHead title="三个必须回答的问题" sub="答不上来就说明还没做完" icon="info" />
         <div className="grid grid-cols-3 gap-3 mt-1">
           {[
             ['比「水位不变」强多少', `全样本 skill ${sortedRows(latest.metrics.blend).map((r) => r.skill.toFixed(2)).join(' / ')}；事件样本 ${sortedRows(latest.metrics.blend).map((r) => r.eventSkill.toFixed(2)).join(' / ')}（1h/3h/6h/12h）。这个数如果接近 0，模型就没有存在价值。`],
-            ['置信区间可信吗', `PICP90 平均 ${fmtPct(sortedRows(latest.metrics.blend).reduce((a, r) => a + r.picp90, 0) / Math.max(1, blendRows.length))}，目标 90%。覆盖不足说明区间太窄，会漏报；过宽则没有决策价值。`],
+            ['置信区间可信吗（PICP90 = 90% 区间的实际覆盖率）', `PICP90 平均 ${fmtPct(sortedRows(latest.metrics.blend).reduce((a, r) => a + r.picp90, 0) / Math.max(1, blendRows.length))}，目标 90%。覆盖不足说明区间太窄，会漏报；过宽则没有决策价值。`],
             ['现在准不准', rollingRows.length ? `近 ${m.rollingWindowH}h 实盘 skill ${rollingRows.map(({ h, s }) => `${horizonLabel(h)} ${s.skill.toFixed(2)}`).join(' / ')}。这是唯一能证伪离线指标的口径。` : '还没有结算样本。'],
           ].map(([q, a]) => (
             <div key={q} className="rounded-control p-2.5" style={{ background: T.bgCanvas }}>
@@ -436,7 +448,9 @@ function MetricTable({ latest }: { latest: MetricsBundle }) {
           })}
         </tbody>
       </table>
-      <div className="text-[10.5px] text-ink-3 mt-1">单元格：RMSE(m) / skill（相对持久化基线，&gt;0 才算有价值）</div>
+      <div className="text-[10.5px] text-ink-3 mt-1">
+        单元格：RMSE(m) / <Glossary term="skill" />（相对持久化基线，&gt;0 才算有价值）
+      </div>
     </div>
   )
 }
@@ -671,12 +685,14 @@ function VersionRow({ v, busy, onAdopt }: { v: ModelVersion; busy: boolean; onAd
   )
 }
 
-function DecisionRowView({ d }: { d: DecisionRow }) {
+function DecisionRowView({ d, onPick }: { d: DecisionRow; onPick: (id: string) => void }) {
   const sig = Object.entries(d.signals ?? {}).slice(0, 4)
   return (
-    <tr className="row-hover">
+    <tr className="row-hover cursor-pointer" data-site-row={d.siteId} onClick={() => onPick(d.siteId)}>
       <td className="td num text-[11px] text-ink-3">{fmtTime(d.ts as SimTime, 'MM-DD HH:mm:ss')}</td>
-      <td className="td text-[11.5px] text-ink-2 num">{d.siteId}</td>
+      <td className="td text-[11.5px] num">
+        <span style={{ color: T.primary, fontWeight: 600 }}>{d.siteId}</span>
+      </td>
       <td className="td">
         <Tag tone={d.shouldForecast ? 'ai' : 'neutral'}>{d.shouldForecast ? '主动加算' : '常规'}</Tag>
       </td>

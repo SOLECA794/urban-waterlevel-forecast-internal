@@ -496,6 +496,37 @@ if ($Shots) {
     Check '九页截图全部产出' ($after -ge 9) ("shots/ 共 {0} 张（含登录页与管理台）" -f $after)
 }
 
+# ---------------------------------------------------------------- 5.5 交互走查
+# 截图只能证明「页面画出来了」，证明不了「点得动」。
+# 这三件事必须真点一遍再读回 DOM：
+#   1. 抽屉能不能打开、能不能拖宽、里面有没有内容
+#   2. 演示流程九步有没有一步退化成居中空卡片（锚点丢了不会报错）
+#   3. 界面上有没有飘着 markdown 的星号（文案写进渲染字符串时最容易漏）
+if ($Shots) {
+    Section '5.5 交互走查（真点击 + 读回 DOM）'
+
+    $dw = & node scripts\shoot-drawers.mjs --base $Base 2>&1
+    $dwOk = @($dw | Where-Object { $_ -match '—— OK' }).Count
+    $dwFail = @($dw | Where-Object { $_ -match 'FAIL' }).Count
+    $dw | ForEach-Object { Write-Host ("    " + $_) -ForegroundColor DarkGray }
+    Check '跨页抽屉可开可拖宽' ($dwOk -ge 4 -and $dwFail -eq 0) ("{0} 页通过，{1} 处失败" -f $dwOk, $dwFail)
+
+    $tr = & node scripts\shoot-tour.mjs --base $Base 2>&1
+    $trHit = @($tr | Where-Object { $_ -match '^\s*第 \d+ 步.*锚点命中' }).Count
+    $tr | ForEach-Object { Write-Host ("    " + $_) -ForegroundColor DarkGray }
+    Check '演示流程九步锚点全部命中' ($trHit -eq 9) ("命中 {0} / 9 步" -f $trHit)
+
+    $sy = & node scripts\shoot-system.mjs --base $Base 2>&1
+    $syFail = @($sy | Where-Object { $_ -match 'FAIL' }).Count
+    $sy | ForEach-Object { Write-Host ("    " + $_) -ForegroundColor DarkGray }
+    Check '系统页链路与接口抽屉可用' ($syFail -eq 0) ("{0} 处失败" -f $syFail)
+
+    $st = & node scripts\check-stars.mjs --base $Base 2>&1
+    $stFail = @($st | Where-Object { $_ -match 'FAIL|失败：' }).Count
+    $st | ForEach-Object { Write-Host ("    " + $_) -ForegroundColor DarkGray }
+    Check '页面上没有露出 markdown 星号（看渲染后的文本，不看源码）' ($stFail -eq 0) ("{0} 处页面文案里出现星号" -f $stFail)
+}
+
 # ---------------------------------------------------------------- 汇总
 Section '验收汇总'
 Write-Host ("  PASS {0}   FAIL {1}" -f $script:pass, $script:fail) -ForegroundColor $(if ($script:fail -eq 0) { 'Green' } else { 'Red' })

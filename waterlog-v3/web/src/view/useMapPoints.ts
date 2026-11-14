@@ -84,3 +84,27 @@ export function useMapPoints(): readonly MapPoint[] {
     })
   }, [ov.data])
 }
+
+/**
+ * 给真地图用的站点数组（不再做等距投影）。
+ *
+ * `useMapPoints` 那套是给抽象示意图算 x/y 的，真地图只要经纬度——
+ * 两个 shape 同时存在是对的：抽象图还在大屏里用，真地图只认坐标。
+ */
+export function useMapStations(): import('../map/RealMap').MapStation[] {
+  const ov = useOverview()
+  return useMemo(
+    () =>
+      (ov.data?.rows ?? []).map((r) => ({
+        id: r.site.id,
+        name: r.site.name,
+        district: r.site.district,
+        lon: Number(r.site.lon),
+        lat: Number(r.site.lat),
+        depth: Number(r.reading.depth),
+        level: r.assessment.level,
+        rain: Number(r.reading.rain),
+      })),
+    [ov.data],
+  )
+}

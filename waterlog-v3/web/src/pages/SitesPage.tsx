@@ -5,6 +5,7 @@ import { useTrust } from '../view/useTrust'
 import { SORT_LABEL, useWatchlist, type WatchSort } from '../view/useWatchlist'
 import { useSituation } from '../view/useSituation'
 import { EmptyState, SectionHead } from '../components/primitives/Bits'
+import { SiteDrawer } from '../components/interactive/StationDetail'
 import { Sparkline } from '../components/primitives/Sparkline'
 import { Icon } from '../components/primitives/Icons'
 import { DeltaValue, DepthValue, RainValue, ThresholdRuler } from '../components/domain/Value'
@@ -23,6 +24,7 @@ const SORTS: readonly WatchSort[] = ['level', 'depth', 'trend', 'rain']
 export function SitesPage() {
   const nav = useNavigate()
   const [sort, setSort] = useState<WatchSort>('level')
+  const [selected, setSelected] = useState<string | null>(null)
   const list = useWatchlist(sort)
   const situation = useSituation()
   const trust = useTrust()
@@ -37,10 +39,10 @@ export function SitesPage() {
         hint={trust.hint}
       />
 
-      <div className="card p-4">
+      <div className="card p-4" data-tour="sites-table">
         <SectionHead
           title="全部站点"
-          sub={`${list.length} 个监测站点 · 点击任意行进入详情 · 刻度为四级阈值位置`}
+          sub={`${list.length} 个监测站点 · 点击任意行就地看详情 · 刻度为四级阈值位置`}
           icon="layers"
           right={
             <div className="flex items-center gap-2">
@@ -81,8 +83,9 @@ export function SitesPage() {
                 {list.map((g) => (
                   <tr
                     key={g.site.id}
+                    data-site-row={g.site.id}
                     className="row-hover cursor-pointer"
-                    onClick={() => nav(`/sites/${g.site.id}`)}
+                    onClick={() => setSelected(g.site.id)}
                     style={g.isAlarm ? { background: `${T.levelWeak[g.assessment.level]}66` } : undefined}
                   >
                     <td className="td">
@@ -158,6 +161,16 @@ export function SitesPage() {
           </span>
         </div>
       </div>
+
+      {/* 行点击开抽屉：右侧就地展开，排序与滚动位置都不丢。
+          要整页档案时抽屉里有入口。 */}
+      <SiteDrawer
+        siteId={selected}
+        onClose={() => setSelected(null)}
+        onPick={setSelected}
+        width={470}
+        onOpenArchive={selected ? () => nav(`/sites/${selected}`) : undefined}
+      />
 
       <div className="card p-3 flex flex-wrap items-center gap-4 text-[11px] text-ink-3">
         <span className="flex items-center gap-1.5">

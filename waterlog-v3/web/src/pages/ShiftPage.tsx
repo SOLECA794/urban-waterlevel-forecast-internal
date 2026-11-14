@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { fmtTime, LEVEL_FULL, LEVEL_MEANING, STATE_LABEL, DISPOSITION_LABEL } from '../domain'
 import { T } from '../utils/tokens'
@@ -7,6 +8,7 @@ import { SectionHead, EmptyState, KeyValue } from '../components/primitives/Bits
 import { StatCard } from '../components/primitives/Stat'
 import { Icon } from '../components/primitives/Icons'
 import { LevelChip, StatusDot, Tag } from '../components/domain/LevelChip'
+import { SiteDrawer } from '../components/interactive/StationDetail'
 
 /**
  * 值班台。
@@ -21,6 +23,9 @@ import { LevelChip, StatusDot, Tag } from '../components/domain/LevelChip'
 export function ShiftPage() {
   const r = useShiftReport()
   const { user } = useSession()
+  // 站名点开抽屉。交接时的问题永远是「这一站现在怎么样」，
+  // 跳去站点详情会把本班视图的滚动位置和筛选一起丢掉。
+  const [siteId, setSiteId] = useState<string | null>(null)
 
   const rate = closureRate(r)
   const ack = ackVerdict(r)
@@ -123,7 +128,7 @@ export function ShiftPage() {
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.25fr_1fr]">
         {/* 交接事项：这一屏是整页的重点 */}
-        <div className="card card-pad">
+        <div className="card card-pad" data-tour="shift-handoff">
           <SectionHead
             title="交接事项"
             sub="按「预警是否成立 × 处置进度」排列，第一列是下一步动作"
@@ -148,7 +153,7 @@ export function ShiftPage() {
           ) : (
             <div className="mt-3 space-y-2">
               {r.todos.slice(0, 12).map((t) => (
-                <TodoRow key={t.event.id} todo={t} />
+                <TodoRow key={t.event.id} todo={t} onPick={setSiteId} />
               ))}
               {r.todos.length > 12 ? (
                 <Link
@@ -196,12 +201,28 @@ export function ShiftPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-1.5">
-                      <Link
-                        to={`/sites/${e.siteId}`}
-                        className="truncate text-[12.5px] font-medium text-ink hover:underline"
+                      <button
+                        type="button"
+                        data-site-name={e.siteId}
+                        onClick={() => setSiteId(e.siteId)}
+                        title="查看该站点当前水位与预测"
+                        className="truncate"
+                        style={{
+                          border: 0,
+                          background: 'none',
+                          padding: 0,
+                          cursor: 'pointer',
+                          fontSize: 12.5,
+                          fontWeight: 500,
+                          color: T.text1,
+                          textDecoration: 'underline',
+                          textDecorationColor: T.borderStrong,
+                          textUnderlineOffset: 3,
+                          maxWidth: 200,
+                        }}
                       >
                         {e.siteName}
-                      </Link>
+                      </button>
                       <LevelChip level={e.level} score={e.score} />
                       <span className="ml-auto shrink-0 text-[10.5px] num text-ink-3">
                         {fmtTime(e.raisedAt, 'HH:mm')}
@@ -266,6 +287,13 @@ export function ShiftPage() {
           </div>
         </div>
       </div>
+
+      <SiteDrawer
+        siteId={siteId}
+        onClose={() => setSiteId(null)}
+        onPick={setSiteId}
+        width={470}
+      />
     </div>
   )
 }
@@ -274,7 +302,13 @@ function isStateActive(state: string): boolean {
   return state.startsWith('ACTIVE')
 }
 
-function TodoRow({ todo }: { todo: ReturnType<typeof useShiftReport>['todos'][number] }) {
+function TodoRow({
+  todo,
+  onPick,
+}: {
+  todo: ReturnType<typeof useShiftReport>['todos'][number]
+  onPick: (id: string) => void
+}) {
   const { event: e, tone, action, ageMin, ackMin } = todo
   const color = tone === 'critical' ? T.levelInk.red : tone === 'warn' ? T.levelInk.yellow : T.text3
   const bg = tone === 'critical' ? T.levelWeak.red : tone === 'warn' ? T.levelWeak.yellow : T.levelWeak.none
@@ -283,12 +317,26 @@ function TodoRow({ todo }: { todo: ReturnType<typeof useShiftReport>['todos'][nu
     <div className="rounded-control border p-2.5" style={{ borderColor: T.border1, background: bg }}>
       <div className="flex flex-wrap items-center gap-2">
         <StatusDot level={e.level} />
-        <Link
-          to={`/sites/${e.siteId}`}
-          className="text-[12.5px] font-medium text-ink hover:underline"
+        <button
+          type="button"
+          data-site-name={e.siteId}
+          onClick={() => onPick(e.siteId)}
+          title="查看该站点当前水位与预测"
+          style={{
+            border: 0,
+            background: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            fontSize: 12.5,
+            fontWeight: 500,
+            color: T.text1,
+            textDecoration: 'underline',
+            textDecorationColor: T.borderStrong,
+            textUnderlineOffset: 3,
+          }}
         >
           {e.siteName}
-        </Link>
+        </button>
         <span className="text-[10.5px] num text-ink-3">{e.siteId}</span>
         <LevelChip level={e.level} score={e.score} />
         <span className="text-[10.5px] num" style={{ color: T.text2 }}>

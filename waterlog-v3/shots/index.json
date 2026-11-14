@@ -1,78 +1,58 @@
-[
- {
-  "file": "shots/01-overview.png",
-  "bytes": 530010
- },
- {
-  "file": "shots/02-sites.png",
-  "bytes": 295442
- },
- {
-  "file": "shots/03-detail-S08.png",
-  "bytes": 394417
- },
- {
-  "file": "shots/04-alerts.png",
-  "bytes": 152483
- },
- {
-  "file": "shots/05-shift.png",
-  "bytes": 203610
- },
- {
-  "file": "shots/06-model.png",
-  "bytes": 508999
- },
- {
-  "file": "shots/07-rules.png",
-  "bytes": 236859
- },
- {
-  "file": "shots/08-system.png",
-  "bytes": 346285
- },
- {
-  "file": "shots/09-admin.png",
-  "bytes": 185076
- },
- {
-  "file": "shots/10-login.png",
-  "bytes": 121729
- },
- {
-  "file": "shots/board-edit.png",
-  "bytes": 1247055
- },
- {
-  "file": "shots/board-light-s0.png",
-  "bytes": 686912
- },
- {
-  "file": "shots/board-light-s1.png",
-  "bytes": 295829
- },
- {
-  "file": "shots/board-light-s2.png",
-  "bytes": 426636
- },
- {
-  "file": "shots/board-light.png",
-  "bytes": 409964
- },
- {
-  "file": "shots/prod-board-s0.png",
-  "bytes": 686912
- },
- {
-  "file": "shots/prod-board-s1.png",
-  "bytes": 295829
- },
- {
-  "file": "shots/prod-board-s2.png",
-  "bytes": 426636
- },
- {
-  "file": "shots/prod-board.png",
-  "bytes": 869267
- }
-]
+{
+  "base": "http://127.0.0.1:8200",
+  "width": 1600,
+  "height": 1500,
+  "captured_at": "2026-11-14T18:15:27.431Z",
+  "pages": [
+    {
+      "name": "01-overview",
+      "route": "/",
+      "bytes": 577228.8
+    },
+    {
+      "name": "02-sites",
+      "route": "/sites",
+      "bytes": 301875.2
+    },
+    {
+      "name": "03-detail-S07",
+      "route": "/sites/S07",
+      "bytes": 404275.2
+    },
+    {
+      "name": "04-alerts",
+      "route": "/alerts",
+      "bytes": 240025.6
+    },
+    {
+      "name": "05-shift",
+      "route": "/shift",
+      "bytes": 395980.8
+    },
+    {
+      "name": "06-model",
+      "route": "/model",
+      "bytes": 534425.6
+    },
+    {
+      "name": "07-rules",
+      "route": "/rules",
+      "bytes": 243814.4
+    },
+    {
+      "name": "08-system",
+      "route": "/system",
+      "bytes": 373043.2
+    },
+    {
+      "name": "09-admin",
+      "route": "/admin",
+      "bytes": 189440
+    },
+    {
+      "name": "10-login",
+      "route": "/login",
+      "bytes": 121753.6
+    }
+  ]
+}

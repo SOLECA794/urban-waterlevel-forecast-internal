@@ -32,6 +32,7 @@ import { EmptyState, KeyValue, SectionHead, Skeleton } from '../components/primi
 import { StatCard } from '../components/primitives/Stat'
 import { Icon } from '../components/primitives/Icons'
 import { LevelChip, StatusDot, Tag } from '../components/domain/LevelChip'
+import { SiteDrawer } from '../components/interactive/StationDetail'
 import { T } from '../utils/tokens'
 
 /**
@@ -48,6 +49,8 @@ export function AlertsPage() {
   const nav = useNavigate()
   const [activeOnly, setActiveOnly] = useState(true)
   const [selected, setSelected] = useState<number | null>(null)
+  // 站名点击打开的站点抽屉：与预警卷宗是两个独立的面板，互不顶掉
+  const [siteId, setSiteId] = useState<string | null>(null)
   const { data: events, isLoading, error } = useAlerts(activeOnly)
   const detail = useAlertDetail(selected)
 
@@ -76,7 +79,7 @@ export function AlertsPage() {
       </div>
 
       <div className="grid grid-cols-[1fr_400px] gap-4 items-start">
-        <div className="card p-4">
+        <div className="card p-4" data-tour="alerts-table">
           <SectionHead
             title="预警事件"
             sub="点任意一行查看处置卷宗；四态由模型推进，处置由人推进"
@@ -162,9 +165,36 @@ export function AlertsPage() {
                       <td className="td">
                         <div className="flex items-center gap-1.5">
                           <StatusDot level={e.level} />
-                          <span className="text-[12.5px] font-medium text-ink truncate max-w-[128px]">
+                          {/* 站名单独可点：点站名看站点，点行内其它地方选这条预警。
+                              两个动作都保留，因为它们是两个不同的问题。 */}
+                          <button
+                            type="button"
+                            data-site-name={e.siteId}
+                            onClick={(ev) => {
+                              ev.stopPropagation()
+                              setSiteId(e.siteId)
+                            }}
+                            title="查看该站点当前水位与预测"
+                            style={{
+                              border: 0,
+                              background: 'none',
+                              padding: 0,
+                              cursor: 'pointer',
+                              fontSize: 12.5,
+                              fontWeight: 500,
+                              color: T.text1,
+                              maxWidth: 128,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              textAlign: 'left',
+                              textDecoration: 'underline',
+                              textDecorationColor: T.borderStrong,
+                              textUnderlineOffset: 3,
+                            }}
+                          >
                             {e.siteName}
-                          </span>
+                          </button>
                           <span className="text-[10px] text-ink-3 num">{e.siteId}</span>
                         </div>
                       </td>
@@ -197,7 +227,7 @@ export function AlertsPage() {
         </div>
 
         {/* 处置卷宗 */}
-        <div className="card p-4 sticky top-4">
+        <div className="card p-4 sticky top-4" data-tour="alerts-dossier">
           {selected == null ? (
             <EmptyState icon="layers" title="选一条预警" hint="左侧点任意一行，这里会显示四态、处置动作与备注时间线。" compact />
           ) : detail.isLoading ? (
@@ -214,6 +244,14 @@ export function AlertsPage() {
           )}
         </div>
       </div>
+
+      <SiteDrawer
+        siteId={siteId}
+        onClose={() => setSiteId(null)}
+        onPick={setSiteId}
+        width={470}
+        onOpenArchive={siteId ? () => nav(`/sites/${siteId}`) : undefined}
+      />
     </div>
   )
 }

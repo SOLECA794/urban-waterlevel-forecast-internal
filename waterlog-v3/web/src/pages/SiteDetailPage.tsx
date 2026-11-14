@@ -22,6 +22,7 @@ import { LevelBadge, LevelChip, Tag } from '../components/domain/LevelChip'
 import { QualityBadge } from '../components/domain/Trust'
 import { DeltaValue, DepthValue, LevelValue, ThresholdRuler } from '../components/domain/Value'
 import { T } from '../utils/tokens'
+import { Emph } from '../components/primitives/Rich'
 
 /**
  * 站点详情 = L4 溯源。整页只回答一个问题：**凭什么判我这一级？**
@@ -314,8 +315,7 @@ export function SiteDetailPage() {
               </div>
             </div>
             <div className="mt-3 text-[11px] text-ink-3">
-              两道硬约束**只降不升**：持续时间不达门槛封顶降级，趋势明显回落再降一级。
-              分数够高但雨已经停了的情况，不该弹红警。
+              <Emph text="两道硬约束**只降不升**：持续时间不达门槛封顶降级，趋势明显回落再降一级。分数够高但雨已经停了的情况，不该弹红警。" />
             </div>
           </div>
         </div>

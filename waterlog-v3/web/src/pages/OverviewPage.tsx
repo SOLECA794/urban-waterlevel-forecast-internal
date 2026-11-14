@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { useAlerts, useForecast } from '../data/queries'
 import { fmtTime, LEVEL_LABEL, maxLevel, type SimTime } from '../domain'
 import { useTrust } from '../view/useTrust'
-import { MapCanvas, MAP_LEGEND } from '../components/charts/MapCanvas'
-import { useMapPoints } from '../view/useMapPoints'
+import { MAP_LEGEND } from '../components/charts/MapCanvas'
+import { useMapStations } from '../view/useMapPoints'
+import { SiteDrawer } from '../components/interactive/StationDetail'
+import { RealMap } from '../map/RealMap'
 import { nameList, useSituation } from '../view/useSituation'
 import { useTopWatch, useWatchlist } from '../view/useWatchlist'
 import { EmptyState, Legend, SectionHead, Skeleton, Tracker } from '../components/primitives/Bits'
@@ -30,13 +32,14 @@ import { T } from '../utils/tokens'
 export function OverviewPage() {
   const nav = useNavigate()
   const situation = useSituation()
-  const points = useMapPoints()
+  const stations = useMapStations()
   const list = useWatchlist('level')
   const top = useTopWatch(5)
   const trust = useTrust()
   const alerts = useAlerts(false)
   const forecast = useForecast()
-  const [hover, setHover] = useState<string | null>(null)
+  // 选中的站点：地图气泡、站点卡、关注清单都能设置它，抽屉是唯一的出口
+  const [selected, setSelected] = useState<string | null>(null)
 
   const issuedAt: SimTime = situation.issuedAt
 
@@ -57,7 +60,7 @@ export function OverviewPage() {
     })
   })()
 
-  const hovered = points.find((p) => p.siteId === hover) ?? null
+  const selectedGlance = selected ? (list.find((g) => g.site.id === selected) ?? null) : null
 
   if (!situation.hasData) {
     return (
@@ -180,7 +183,7 @@ export function OverviewPage() {
       {/* 12 小时预测越阈条带。
           地图答「哪里」、卡片答「现在多深」、关注清单答「凭什么」，
           但原本没有任何一处回答「三小时后哪个站会翻红」——这恰恰是值班最要紧的问题。 */}
-      <div className="card card-pad">
+      <div className="card card-pad" data-tour="overview-forecast">
         <SectionHead
           title="12 小时预测越阈"
           sub="实心点＝现在 · 三角＝预测峰值 · 虚线斜率＝上涨速度 · 底色为四级阈值分区"
@@ -196,29 +199,31 @@ export function OverviewPage() {
         {/* 地图与关注清单吸顶：右侧十张卡片全展开后页面变长，
             往下翻时地图还在眼前，「哪片区域在报警」和「哪个站点在报警」才能对着看。 */}
         <div className="space-y-4 sticky top-4">
-          <div className="card p-4">
+          <div className="card p-4" data-tour="overview-map">
             <SectionHead
               title="站点分布与预警着色"
-              sub="半径 ∝ 积水深 · 颜色 = 预警等级 · 点击气泡进入详情"
+              sub="真实路网底图 · 可拖拽缩放 · 点气泡看详情"
               icon="map"
               right={
-                hovered ? (
-                  <span className="text-[11px] num" style={{ color: T.levelInk[hovered.level] }}>
-                    {hovered.siteId} {hovered.name} · {hovered.depth.toFixed(3)} m
+                selectedGlance ? (
+                  <span className="text-[11px] num" style={{ color: T.levelInk[selectedGlance.assessment.level] }}>
+                    {selectedGlance.site.id} {selectedGlance.site.name} · {selectedGlance.reading.depth.toFixed(3)} m
                   </span>
                 ) : (
-                  <span className="text-[11px] text-ink-3">{points.length} 个站点</span>
+                  <span className="text-[11px] text-ink-3">{stations.length} 个站点</span>
                 )
               }
             />
-            <MapCanvas points={points} hovered={hover} onHover={setHover} onPick={(id) => nav(`/sites/${id}`)} />
-            <div className="flex items-center justify-between mt-1 gap-3">
+            <div style={{ height: 400, borderRadius: 8, overflow: 'hidden', border: `1px solid ${T.border1}` }}>
+              <RealMap stations={stations} focusId={selected} onPick={setSelected} height="100%" />
+            </div>
+            <div className="flex items-center justify-between mt-1.5 gap-3">
               <Legend items={MAP_LEGEND} />
-              <span className="text-[11px] text-ink-3 shrink-0">底图为抽象示意，非真实地理</span>
+              <span className="text-[11px] text-ink-3 shrink-0">气泡大小 = 积水深</span>
             </div>
           </div>
 
-          <WatchPanel items={top} onPick={(id) => nav(`/sites/${id}`)} issuedAt={issuedAt} />
+          <WatchPanel items={top} onPick={setSelected} issuedAt={issuedAt} />
         </div>
 
         {/* 站点卡片列表。
@@ -227,10 +232,20 @@ export function OverviewPage() {
             十张卡片全展开，页面长一点没关系。 */}
         <div className="grid grid-cols-2 gap-2.5 stagger">
           {list.map((g) => (
-            <SiteGlanceCard key={g.site.id} glance={g} onClick={() => nav(`/sites/${g.site.id}`)} />
+            <SiteGlanceCard key={g.site.id} glance={g} onClick={() => setSelected(g.site.id)} />
           ))}
         </div>
       </div>
+
+      {/* 详情抽屉：任何入口（地图气泡、站点卡、关注清单）都只设置 selected，
+          抽屉是唯一出口。这样才不会「这里点开是抽屉、那里点开是跳页」。 */}
+      <SiteDrawer
+        siteId={selected}
+        onClose={() => setSelected(null)}
+        onPick={setSelected}
+        width={470}
+        onOpenArchive={selected ? () => nav(`/sites/${selected}`) : undefined}
+      />
     </div>
   )
 }

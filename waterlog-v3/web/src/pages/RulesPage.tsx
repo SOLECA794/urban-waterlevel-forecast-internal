@@ -19,6 +19,8 @@ import { EmptyState, KeyValue, Meter, SectionHead, Skeleton } from '../component
 import { Icon } from '../components/primitives/Icons'
 import { LevelChip, Tag } from '../components/domain/LevelChip'
 import { T } from '../utils/tokens'
+import { SiteDrawer } from '../components/interactive/StationDetail'
+import { Glossary } from '../components/interactive/Tooltip'
 
 /**
  * 规则配置。
@@ -38,6 +40,9 @@ export function RulesPage() {
   const [draft, setDraft] = useState<Rules | null>(null)
   const [impact, setImpact] = useState<RulesImpact | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
+  // 预演把某站从橙调到红之后，用户第一个问题一定是「它现在到底多深」。
+  // 所以站名可点，就地开抽屉，不用记住站号再去站点表里翻。
+  const [siteId, setSiteId] = useState<string | null>(null)
 
   // 服务端规则到达后初始化草稿；保存成功后 useSaveRules 会失效 rules，这里跟随刷新
   useEffect(() => {
@@ -141,8 +146,18 @@ export function RulesPage() {
 
       <div className="grid grid-cols-2 gap-4 items-start">
         {/* 三因子权重 */}
-        <div className="card p-4">
-          <SectionHead title="三因子权重" sub="综合分 = 峰值 × w₁ + 持续 × w₂ + 趋势 × w₃，三者之和必须为 1" icon="gauge" />
+        <div className="card p-4" data-tour="rules-weights">
+          <SectionHead
+            title="三因子权重"
+            sub="综合分 = 峰值 × w₁ + 持续 × w₂ + 趋势 × w₃，三者之和必须为 1"
+            icon="gauge"
+            right={
+              <span className="text-[10.5px] text-ink-3">
+                <Glossary term="综合分" /> · <Glossary term="峰值因子" /> · <Glossary term="持续因子" /> ·{' '}
+                <Glossary term="趋势因子" />
+              </span>
+            }
+          />
           <div className="flex h-2.5 rounded-pill overflow-hidden mt-1" style={{ background: T.border2 }}>
             {weightShares(draft.weights).map((s, i) => (
               <div
@@ -339,7 +354,29 @@ export function RulesPage() {
                     <tr key={c.siteId} className="row-hover" style={{ background: c.direction === 'up' ? `${T.levelWeak.red}66` : c.direction === 'down' ? `${T.levelWeak.blue}66` : undefined }}>
                       <td className="td">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-[12.5px] font-medium text-ink truncate max-w-[130px]">{c.name}</span>
+                          <button
+                            type="button"
+                            data-site-name={c.siteId}
+                            onClick={() => setSiteId(c.siteId)}
+                            title="查看该站点当前水位与预测"
+                            className="truncate"
+                            style={{
+                              border: 0,
+                              background: 'none',
+                              padding: 0,
+                              cursor: 'pointer',
+                              fontSize: 12.5,
+                              fontWeight: 500,
+                              color: T.text1,
+                              maxWidth: 130,
+                              textAlign: 'left',
+                              textDecoration: 'underline',
+                              textDecorationColor: T.borderStrong,
+                              textUnderlineOffset: 3,
+                            }}
+                          >
+                            {c.name}
+                          </button>
                           <span className="text-[10px] text-ink-3 num">{c.siteId}</span>
                         </div>
                       </td>
@@ -369,6 +406,13 @@ export function RulesPage() {
           )}
         </div>
       )}
+
+      <SiteDrawer
+        siteId={siteId}
+        onClose={() => setSiteId(null)}
+        onPick={setSiteId}
+        width={470}
+      />
 
       {/* 方法论 */}
       <div className="card p-4">

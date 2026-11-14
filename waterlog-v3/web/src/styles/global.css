@@ -344,3 +344,43 @@ body {
     animation: none !important;
   }
 }
+
+
+/* 骨架屏微光：加载态用它而不是转圈——转圈只有一个位置的信息，
+   微光块能提前把「这里将来会出现什么形状」告诉用户。 */
+@keyframes wl-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+
+/* 地图气泡的 tooltip。
+   必须显式写 background：项目 reset 把 Leaflet 默认的 `background:#fff` 覆盖掉了，
+   否则文字直接压在瓦片路名上，读不出来。 */
+.wl-map-tip,
+.leaflet-tooltip.wl-map-tip {
+  padding: 6px 9px !important;
+  border-radius: 7px !important;
+  background: #FFFFFF !important;
+  background-color: #FFFFFF !important;
+  color: #0B2545 !important;
+  box-shadow: 0 4px 14px rgba(11,37,69,0.18) !important;
+  border: 1px solid rgba(11,37,69,0.10) !important;
+  font-size: 12px !important;
+  white-space: nowrap !important;
+  opacity: 1 !important;
+}
+/* 去掉默认的三角箭头：它在圆角气泡上会错位，而且指向不准反而误导 */
+.wl-map-tip::before,
+.leaflet-tooltip-top.wl-map-tip::before,
+.leaflet-tooltip-bottom.wl-map-tip::before,
+.leaflet-tooltip-left.wl-map-tip::before,
+.leaflet-tooltip-right.wl-map-tip::before {
+  display: none !important;
+  border: 0 !important;
+}
+
+/* 尊重系统设置：开了「减少动效」就把所有过渡压到近零。
+   地图 flyTo 由 Leaflet JS 驱动，这里管不到，所以 RealMap 里也没做动画时长分支。 */
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}

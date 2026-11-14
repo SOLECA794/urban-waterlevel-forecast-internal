@@ -12,6 +12,8 @@ import { useAlerts, useHealth, useOverview } from '../data/queries'
 import { useLive } from '../data/live'
 import { useSession } from '../view/useSession'
 import { Icon, type IconName } from './primitives/Icons'
+import { UiIconCmp } from './interactive/UiIcon'
+import { startTour } from './TourHost'
 import { T } from '../utils/tokens'
 
 /**
@@ -35,6 +37,7 @@ const GROUPS: { title: string; items: NavEntry[] }[] = [
     title: '监测',
     items: [
       { to: '/', label: '一张图', icon: 'map', end: true, hint: '全市积水与预警总览' },
+      { to: '/live', label: '实时地图', icon: 'target', hint: '可拖拽缩放的真实地图，点站点看详情' },
       { to: '/sites', label: '站点列表', icon: 'layers', hint: '十个站点的横向对比' },
       { to: '/alerts', label: '预警中心', icon: 'bell', hint: '事件、处置与备注' },
       { to: '/shift', label: '值班台', icon: 'clock', hint: '近 12 小时的交接：还剩什么没完' },
@@ -66,6 +69,9 @@ const ADMIN_ONLY = new Set(['/admin'])
 
 export function Layout() {
   const loc = useLocation()
+
+  // 铺满型路由：自己管内边距与滚动位置，父容器不加 p-4、不滚动。
+  const flush = loc.pathname === '/live'
   const health = useHealth()
   const overview = useOverview()
   const alerts = useAlerts(true)
@@ -79,7 +85,10 @@ export function Layout() {
   const title = findTitle(loc.pathname)
 
   return (
-    <div className="flex min-h-screen" style={{ background: T.bgCanvas }}>
+    <div
+      className={flush ? 'flex h-screen overflow-hidden' : 'flex min-h-screen'}
+      style={{ background: T.bgCanvas }}
+    >
       {/* ── 侧栏 ── */}
       <aside
         className="w-[212px] shrink-0 flex flex-col relative"
@@ -104,7 +113,7 @@ export function Layout() {
           </div>
         </div>
 
-        <nav className="relative flex-1 overflow-y-auto px-2 pb-3">
+        <nav className="relative flex-1 min-h-0 overflow-y-auto px-2 pb-3">
           {GROUPS.map((g) => (
             <div key={g.title} className="mb-3">
               <div className="px-2.5 mb-1 text-[9.5px] tracking-[0.16em] text-[#4b5b74]">
@@ -220,10 +229,25 @@ export function Layout() {
               待结算 {health.data?.engine.pending ?? 0} · SSE {live.connected ? '通' : '断'}
             </span>
           </span>
+
+          {/* 演示流程入口。放在顶栏最右：它是「教我用」，不是业务动作，
+              不该混在页面内的操作区里跟真的按钮抢注意力。 */}
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={startTour}
+            data-tour-entry=""
+            title="带人走一遍从下雨到归档的完整链路（← → 翻步，Esc 退出）"
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <UiIconCmp name="play" size={12} />
+              演示流程
+            </span>
+          </button>
         </header>
 
-        <main className="flex-1 min-w-0 p-4">
-          <div key={loc.pathname} className="page-enter">
+        <main className={flush ? 'flex-1 min-w-0 overflow-hidden' : 'flex-1 min-w-0 p-4'}>
+          <div key={loc.pathname} className={flush ? 'h-full' : 'page-enter'}>
             <Outlet />
           </div>
         </main>

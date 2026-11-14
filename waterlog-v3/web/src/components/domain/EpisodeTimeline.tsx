@@ -2,6 +2,7 @@ import { fmtMinutes, fmtTime, thresholdSegments } from '../../domain'
 import type { Meters, SiteSeries, Thresholds } from '../../domain'
 import { T } from '../../utils/tokens'
 import { LevelChip } from '../domain/LevelChip'
+import { Emph } from '../primitives/Rich'
 
 /**
  * 一次降雨过程的「涨水分段」。
@@ -100,7 +101,7 @@ export function EpisodeTimeline({
       <div className="mt-2 text-[10.5px] leading-relaxed text-ink-3">
         共 {segs.length} 段超过蓝色阈值的积水过程{ongoing > 0 ? `，其中 ${ongoing} 段仍在持续` : ''}。
         分段按 5 分钟采样的深度查阈值得到，两段之间只要有任一次采样回落到蓝阈以下就算断开；
-        它描述的是**实际过程**，与研判结论（含持续时间门槛与趋势跨档）不是同一件事。
+        <Emph text="它描述的是**实际过程**，与研判结论（含持续时间门槛与趋势跨档）不是同一件事。" />
       </div>
     </div>
   )
