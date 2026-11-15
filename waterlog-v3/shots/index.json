@@ -1,19 +1,31 @@
 [
  {
+  "file": "shots/board-dark-s0.png",
+  "bytes": 875157
+ },
+ {
+  "file": "shots/board-dark-s1.png",
+  "bytes": 449711
+ },
+ {
+  "file": "shots/board-dark-s2.png",
+  "bytes": 475760
+ },
+ {
   "file": "shots/board-light-s0.png",
-  "bytes": 686912
+  "bytes": 877583
  },
  {
   "file": "shots/board-light-s1.png",
-  "bytes": 295829
+  "bytes": 443125
  },
  {
   "file": "shots/board-light-s2.png",
-  "bytes": 426636
+  "bytes": 474576
  },
  {
   "file": "shots/board-light.png",
-  "bytes": 411562
+  "bytes": 863778
  },
  {
   "file": "shots/board9-01-overview.png",

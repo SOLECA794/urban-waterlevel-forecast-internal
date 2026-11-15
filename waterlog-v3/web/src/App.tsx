@@ -29,11 +29,13 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route element={<RequireAuth />}>
-          {/* 展厅大屏：九页轮播，只讲水位预测（1 总览 + 8 放大）。
-              旧的三屏大屏保留在 /board/legacy —— 它是「值班常驻」那一套，
-              和展厅讲解不是同一个用途，删掉等于把值班台的常驻屏弄没了。 */}
-          <Route path="/board" element={<NineBoard />} />
-          <Route path="/board/legacy" element={<BoardPage />} />
+          {/* 大厅大屏 = 三屏轮播（全域总览 / 辖区预测 / 全域研判），每屏 3 秒。
+              它是值班常驻的那一套，也是用户认定的底子：「在那个的基础上去改」。
+              九页放大版留在 /board/nine：它一页只讲一件事，适合站着讲解，
+              不适合当墙上的仪表盘。 */}
+          <Route path="/board" element={<BoardPage />} />
+          <Route path="/board/nine" element={<NineBoard />} />
+          <Route path="/board/legacy" element={<Navigate to="/board" replace />} />
           {/* 工作台：整个系统就这一屏 */}
           <Route path="/" element={<WorkbenchPage />} />
           {/* 旧的 /w 别名保留：上一轮交接时发出去的链接还能打开 */}

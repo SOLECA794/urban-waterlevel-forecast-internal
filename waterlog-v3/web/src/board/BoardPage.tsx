@@ -24,10 +24,11 @@ import {
   useSites,
   type OverviewRow,
 } from '../data/queries'
-import { PALETTE, PaletteCtx, usePalette, type Palette } from './theme'
+import { PALETTE, PaletteCtx, type Palette } from './theme'
 import { techGridUri } from './panel'
 import { BarRow, BigStat, Donut, LevelTag, LiveDot, Panel } from './parts'
 import { TrendChart as TrendBoard } from './TrendChart'
+import { ZoomChart } from './zoom'
 import { RealMap } from './RealMap'
 import { Widget } from './widget'
 import {
@@ -123,33 +124,6 @@ function MiniCurve({ sf, site, p, height = 18 }: { sf: SiteForecast; site: { bas
 }
 
 /** 综合分环形。 */
-function ScoreRing({ score, level, size = 70 }: { score: number; level: Level; size?: number }) {
-  const p = usePalette()
-  const r = (size - 10) / 2
-  const c = 2 * Math.PI * r
-  return (
-    <div style={{ position: 'relative', width: size, height: size, flex: `0 0 ${size}px` }}>
-      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={p.panelLine} strokeWidth={7} />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          stroke={p.level[level]}
-          strokeWidth={7}
-          strokeLinecap="round"
-          strokeDasharray={`${Math.max(0, Math.min(1, score)) * c} ${c}`}
-        />
-      </svg>
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-        <b style={{ fontSize: 18, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{score.toFixed(2)}</b>
-        <span style={{ fontSize: 9, color: p.textFaint, marginTop: 2 }}>综合分</span>
-      </div>
-    </div>
-  )
-}
-
 /** 键值行。 */
 function Row({ label, value, p, strong }: { label: string; value: string; p: Palette; strong?: boolean }) {
   return (
@@ -1303,6 +1277,20 @@ export default function BoardPage() {
                   const last = cells[cells.length - 1] ?? 0
                   const prev = cells[cells.length - 2] ?? 0
                   const hoursAgo = cells.length - 1 - peakIdx
+                  if (total === 0) {
+                    // 一排 2px 的灰条读起来像"图表坏了"，而它其实在说"这 24 小时没人报"。空要说出原因。
+                    const evs = alerts.data ?? []
+                    const newest = evs.reduce((m, e) => Math.max(m, Number(e.raisedAt) || 0), 0)
+                    const silentH = newest ? Math.max(0, Math.round((Number(anchor) - newest) / 3600)) : 0
+                    return (
+                      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
+                        <span style={{ fontSize: 13, color: p.textDim }}>近 24 小时没有新增告警</span>
+                        <span style={{ fontSize: 10.5, color: p.textFaint }}>
+                          {newest ? `最后一条在 ${silentH} 小时前 · 之后十站都在退水` : '当前过程还没有产生过告警'}
+                        </span>
+                      </div>
+                    )
+                  }
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 2 }}>
                       <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end', flex: 1, minHeight: 0 }}>
@@ -1647,7 +1635,7 @@ export default function BoardPage() {
                 onChange={setRect}
                 onCommit={() => saveLayout(layoutRef.current)}
               >
-                <Panel title="累计雨量曲线" sub="本次过程累计 · 虚线为上一场同长度过程" accent={p.rain}>
+                <Panel title="累计雨量曲线" sub="24 小时累计 · 按 5 分钟实测雨强逐格累加" accent={p.rain}>
                   {(() => {
                     const pts = (series?.points ?? []).slice(-288)
                     if (pts.length < 4) {
@@ -1663,11 +1651,10 @@ export default function BoardPage() {
                     const path = cum
                       .map((v, i) => `${i === 0 ? 'M' : 'L'} ${(i / (cum.length - 1)) * W} ${H - (v / max) * (H - 2) - 1}`)
                       .join(' ')
-                    // 上一场：按 0.72 比例画一条参考线，只是"看着比上一场大还是小"的锚
-                    const prev = cum.map((v) => (v / max) * 0.72)
-                    const prevPath = prev
-                      .map((v, i) => `${i === 0 ? 'M' : 'L'} ${(i / (prev.length - 1)) * W} ${H - v * (H - 2) - 1}`)
-                      .join(' ')
+                    // 原来这里画一条"上一场同长度过程"的虚线，其实是本曲线 ×0.72 造出来的假线。
+                    // 图上一条不存在的序列比空着更糟：看的人会拿它做判断。改成真实的分档参考线。
+                    const avg = total / Math.max(1, pts.length)
+                    const refY = H - (avg / max) * (H - 2) - 1
                     return (
                       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 3 }}>
                         <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ flex: 1, minHeight: 0, width: '100%' }}>
@@ -1678,14 +1665,13 @@ export default function BoardPage() {
                             </linearGradient>
                           </defs>
                           <path d={`${path} L ${W} ${H} L 0 ${H} Z`} fill="url(#cumFill)" />
-                          <path d={prevPath} fill="none" stroke={p.textFaint} strokeWidth="0.8" strokeDasharray="2 2" vectorEffect="non-scaling-stroke" />
+                          {/* 平均雨强参考线：这条是真的（累计 ÷ 时长），看曲线在它之上还是之下就知道雨在加强还是收尾 */}
+                          <line x1="0" y1={refY} x2={W} y2={refY} stroke={p.textFaint} strokeWidth="0.8" strokeDasharray="2 2" vectorEffect="non-scaling-stroke" />
                           <path d={path} fill="none" stroke={p.rain} strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
                         </svg>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9.5, color: p.textFaint }}>
                           <span>累计 {total.toFixed(1)} mm</span>
-                          <span style={{ color: total > max * 0.9 ? p.levelInk.orange : p.textDim }}>
-                            {total > max * 0.9 ? '本场强于上一场同期' : '本场弱于上一场同期'}
-                          </span>
+                          <span style={{ color: p.textDim }}>虚线 = 全程平均雨强 {avg.toFixed(1)} mm/h</span>
                           <span>{(pts.length * 5 / 60).toFixed(1)} h</span>
                         </div>
                       </div>
@@ -1808,64 +1794,24 @@ export default function BoardPage() {
 
               {/* ---------- 超阈时长：十站横条，回答「谁泡得最久」 ---------- */}
               <Widget
-                id="duration"
-                rect={rects.duration}
+                id="zacc"
+                rect={rects.zacc}
                 scale={scale}
                 editing={editing}
                 p={p}
                 onChange={setRect}
                 onCommit={() => saveLayout(layoutRef.current)}
               >
-                <Panel title="超阈时长" sub="超过蓝色阈值的持续时长 · 条形一眼比长短" accent={p.level.orange}>
-                  {(() => {
-                    const rows = list
-                      .map((r) => ({
-                        id: r.site.id,
-                        name: r.site.name,
-                        level: r.assessment.level,
-                        min: Number(r.assessment.durationMin ?? 0),
-                      }))
-                      .filter((r) => r.min > 0)
-                      .sort((a, b) => b.min - a.min)
-                    if (!rows.length) {
-                      return <div style={{ fontSize: 11, color: p.textFaint, paddingTop: 6 }}>当前没有站点超过蓝色阈值</div>
-                    }
-                    const max = Math.max(...rows.map((r) => r.min), 1)
-                    return (
-                      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-                        {rows.slice(0, 4).map((r) => (
-                          // flex:'1 1 0' 让四行均分容器高度；写死行高会在 104px 的卡里叠字
-                          <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 5, flex: '1 1 0', minHeight: 0 }}>
-                            <span
-                              style={{ width: 78, fontSize: 10, lineHeight: 1.2, color: p.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '0 0 78px' }}
-                              title={r.name}
-                            >
-                              {r.name}
-                            </span>
-                            <span style={{ position: 'relative', flex: '1 1 auto', height: 10, borderRadius: 3, background: p.panelLine, minWidth: 0 }}>
-                              <span
-                                style={{
-                                  position: 'absolute',
-                                  left: 0,
-                                  top: 0,
-                                  bottom: 0,
-                                  width: `${(r.min / max) * 100}%`,
-                                  borderRadius: 3,
-                                  background: `linear-gradient(90deg, ${p.level[r.level]}88, ${p.level[r.level]})`,
-                                }}
-                              />
-                            </span>
-                            <span style={{ width: 44, flex: '0 0 44px', textAlign: 'right', fontSize: 10.5, fontWeight: 600, color: p.levelInk[r.level], fontVariantNumeric: 'tabular-nums' }}>
-                              {fmtMinutes(r.min)}
-                            </span>
-                          </div>
-                        ))}
-                        <div style={{ fontSize: 9, lineHeight: 1.2, color: p.textFaint, flex: '0 0 auto', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {rows.length > 4 ? `另 ${rows.length - 4} 站超阈 · ` : ''}共 {rows.length} 站超阈
-                        </div>
-                      </div>
-                    )
-                  })()}
+                <Panel title="预报与实际" sub="同一站点 · 预测离真值有多远" accent={p.accent2}>
+                  {/* 尺寸由版面算，不让子元素量高度：Panel 的 body 是 flex:1 的块，
+                      里面的百分比/flex 子元素量到 0，图就整块空白（踩过一次）。 */}
+                  <ZoomChart
+                    id="zacc"
+                    p={p}
+                    w={rects.zacc.w - 24}
+                    h={rects.zacc.h - 46}
+                    detail="compact"
+                  />
                 </Panel>
               </Widget>
 
@@ -2252,6 +2198,53 @@ export default function BoardPage() {
                         if (h2 >= 0 && h2 < 12) buckets[11 - h2].cleared += 1
                       }
                     })
+                    if (buckets.every((b) => b.raised === 0 && b.cleared === 0)) {
+                      const newest = evs.reduce((m, e) => Math.max(m, Number(e.raisedAt) || 0), 0)
+                      const silentH = newest ? Math.max(0, Math.round((Number(nowMs) - newest) / 3600)) : 0
+                      // 空图不能只是一句"没有"：这一格要回答"在恶化还是收尾"，
+                      // 所以把在册 / 仍挂着 / 已解除三个计数摆出来，让"没有新增"落到具体存量上。
+                      const still = evs.filter((e) => String(e.state).startsWith('ACTIVE')).length
+                      const done = evs.length - still
+                      return (
+                        <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                            <span style={{ fontSize: 12.5, color: p.textDim }}>近 12 小时没有新增或解除</span>
+                            <span style={{ fontSize: 10.5, color: p.textFaint, whiteSpace: 'nowrap' }}>最后一条 {silentH} 小时前 · 明细取前 {evs.length} 条</span>
+                          </div>
+                          <div style={{ display: 'flex', gap: 6, flex: 1, minHeight: 0 }}>
+                            {[
+                              // 不报"在册"总数：alerts 拉的是前 N 条明细，把截断后的条数当
+                              // 总量摆出来就是撒谎。红色站数取自 overview（十站全量）。
+                              {
+                                k: '红色站',
+                                v: (overview.data?.rows ?? []).filter((r) => r.assessment.level === 'red').length,
+                                c: p.text,
+                              },
+                              { k: '仍挂着', v: still, c: p.levelInk.red },
+                              { k: '已解除', v: done, c: p.levelInk.blue },
+                            ].map((x) => (
+                              <div
+                                key={x.k}
+                                style={{
+                                  flex: 1,
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                  gap: 2,
+                                  border: `1px solid ${p.panelBorder}`,
+                                  borderRadius: 6,
+                                  background: 'rgba(255,255,255,0.55)',
+                                }}
+                              >
+                                <span style={{ fontSize: 22, fontWeight: 700, color: x.c, lineHeight: 1.05 }}>{x.v}</span>
+                                <span style={{ fontSize: 9.5, color: p.textFaint }}>{x.k}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    }
                     const mx = Math.max(1, ...buckets.map((b) => Math.max(b.raised, b.cleared)))
                     const lastR = buckets[11].raised
                     const prevR = buckets[10].raised
@@ -2503,14 +2496,25 @@ export default function BoardPage() {
                             </div>
                           )
                         })}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '0 0 auto', borderTop: `1px solid ${p.panelLine}`, paddingTop: 5 }}>
-                          <ScoreRing score={score} level={asm?.level ?? 'none'} size={52} />
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 10, color: p.textDim, lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        {/* 底栏定高 54 + overflow hidden：卡片只有 300 来像素宽，理由那句话
+                            会随站点换行成两三行，不定高时它把上面三条因子挤扁、把圆环挤到卡外。 */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7, flex: '0 0 54px', minHeight: 0, overflow: 'hidden', borderTop: `1px solid ${p.panelLine}`, paddingTop: 4 }}>
+                          {/* 这里不摆圆环：卡片只有 300 来像素宽，圆环里的 18px 数字 + 9px 标签
+                              在 46px 直径里会被裁成半个字（圆环是给 70px 宽卡位设计的）。
+                              数字直接排版，宽度由字体决定就不会溢出。 */}
+                          <div style={{ flex: '0 0 58px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+                            <b style={{ fontSize: 21, lineHeight: 1, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: p.levelInk[asm?.level ?? 'none'] }}>
+                              {score.toFixed(2)}
+                            </b>
+                            <span style={{ fontSize: 9, lineHeight: 1.1, color: p.textFaint, whiteSpace: 'nowrap' }}>综合分</span>
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                            {/* 只放研判原话，3 行封顶。
+                                原来下面还挂一行"门槛 0.90 → 0.22/0.40/0.60/0.78"，
+                                两行在 54px 定高里会互相压字（clamp 的第 3 视觉行不受 -webkit-box 裁切）。
+                                门槛是规则页的事，这里留结论。 */}
+                            <div style={{ fontSize: 9.5, color: p.textDim, lineHeight: 1.34, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', maxHeight: 39 }}>
                               {asm?.reason ?? '等待该站研判结果'}
-                            </div>
-                            <div style={{ fontSize: 9, color: p.textFaint, marginTop: 1 }}>
-                              综合分 {score.toFixed(2)} · 分级门槛 0.22 / 0.40 / 0.60 / 0.78
                             </div>
                           </div>
                         </div>
@@ -2840,6 +2844,29 @@ export default function BoardPage() {
                   </div>
                 </div>
               </Panel>
+              </Widget>
+
+              <Widget
+                id="zpoints"
+                rect={rects.zpoints}
+                scale={scale}
+                editing={editing}
+                p={p}
+                onChange={setRect}
+                onCommit={() => saveLayout(layoutRef.current)}
+              >
+                <Panel title="四预见期落点" sub="1 / 3 / 6 / 12 小时后" accent={p.accent2}>
+                  {/* 尺寸直接由版面算：Panel 的 body 是 `flex:1` 的块，子元素用百分比或
+                      flex 都量不出可用高度（量到 0，图就不画）。这里 w/h 是画布像素，
+                      减去卡片内边距（左右各 12）与标题栏（约 30）＋上下内边距（16）。 */}
+                  <ZoomChart
+                    id="zpoints"
+                    p={p}
+                    w={rects.zpoints.w - 24}
+                    h={rects.zpoints.h - 46}
+                    detail="compact"
+                  />
+                </Panel>
               </Widget>
             </div>
           </main>

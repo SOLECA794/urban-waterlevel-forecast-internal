@@ -55,6 +55,11 @@ export type WidgetId =
   | 'trendout'
   | 'confidence'
   | 'districtcmp'
+  // 轮播大屏里复用的放大件：同一份绘图代码，compact 尺寸塞进卡片。
+  // 它们不进 /board/nine（那套有自己的一套版面和坐标），只作为旧大屏的补充卡片。
+  | 'zacc'
+  | 'zrank'
+  | 'zpoints'
 
 export const WIDGET_IDS: readonly WidgetId[] = [
   'situation',
@@ -94,6 +99,9 @@ export const WIDGET_IDS: readonly WidgetId[] = [
   'trendout',
   'confidence',
   'districtcmp',
+  'zacc',
+  'zrank',
+  'zpoints',
 ]
 
 export const WIDGET_TITLE: Record<WidgetId, string> = {
@@ -134,6 +142,9 @@ export const WIDGET_TITLE: Record<WidgetId, string> = {
   trendout: '全域趋势研判',
   confidence: '预测可信度',
   districtcmp: '多区对比',
+  zacc: '预报与实际',
+  zrank: '积水排行',
+  zpoints: '四预见期落点',
 }
 
 export interface Rect {
@@ -197,6 +208,9 @@ const BALANCED: Record<WidgetId, Rect> = {
   trendout: R(0, 0, 0, 0),
   confidence: R(0, 0, 0, 0),
   districtcmp: R(0, 0, 0, 0),
+  zacc: R(0, 0, 0, 0),
+  zrank: R(0, 0, 0, 0),
+  zpoints: R(0, 0, 0, 0),
 }
 
 /** 地图优先：两侧收窄，中间留给底图。 */
@@ -239,6 +253,9 @@ const MAP_FIRST: Record<WidgetId, Rect> = {
   trendout: R(0, 0, 0, 0),
   confidence: R(0, 0, 0, 0),
   districtcmp: R(0, 0, 0, 0),
+  zacc: R(0, 0, 0, 0),
+  zrank: R(0, 0, 0, 0),
+  zpoints: R(0, 0, 0, 0),
 }
 
 /** 信息优先：两侧加宽，底图退成背景。 */
@@ -281,6 +298,9 @@ const INFO_FIRST: Record<WidgetId, Rect> = {
   trendout: R(0, 0, 0, 0),
   confidence: R(0, 0, 0, 0),
   districtcmp: R(0, 0, 0, 0),
+  zacc: R(0, 0, 0, 0),
+  zrank: R(0, 0, 0, 0),
+  zpoints: R(0, 0, 0, 0),
 }
 
 export const PRESETS: Record<PresetName, Record<WidgetId, Rect>> = {
