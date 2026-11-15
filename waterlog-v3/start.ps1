@@ -100,10 +100,31 @@ Write-Ok "go     = $go"
 if ($node) { Write-Ok "node   = $node" }
 
 # 端口占用检查（只提示，不擅自杀）
+#
+# 两个坑：
+# 1. 刚 -Stop 完的几秒内，`-State Listen` 仍可能返回一条 OwningProcess = 0 的残条，
+#    进程其实已经没了。按 pid 判断会被它挡住，于是「停完立刻启」永远失败。
+#    所以要求「pid != 0 且该进程确实还在」才算真占用。
+# 2. 端口真正释放有延迟，直接 throw 会让重启变成一件需要等两分钟的事。
+#    改成最多等 15 秒再确认一次。
+function Test-PortBusy([int]$port) {
+    $hits = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+    foreach ($h in $hits) {
+        if ($h.OwningProcess -eq 0) { continue }
+        if (-not (Get-Process -Id $h.OwningProcess -ErrorAction SilentlyContinue)) { continue }
+        return $h.OwningProcess
+    }
+    return $null
+}
+
 foreach ($port in @($ApiPort, $EnginePort)) {
-    $busy = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
-    if ($busy) {
-        throw "端口 $port 已被占用（pid $($busy[0].OwningProcess)）。请先 .\start.ps1 -Stop 或换端口：-ApiPort/-EnginePort"
+    $owner = Test-PortBusy $port
+    for ($i = 0; $i -lt 15 -and $owner; $i++) {
+        Start-Sleep -Seconds 1
+        $owner = Test-PortBusy $port
+    }
+    if ($owner) {
+        throw "端口 $port 已被占用（pid $owner）。请先 .\start.ps1 -Stop 或换端口：-ApiPort/-EnginePort"
     }
 }
 

@@ -62,7 +62,9 @@ const LEVEL_TEXT: Record<MapLevel, string> = {
 }
 
 /** 出现某等级时，光晕比气泡大多少倍——等级越高越"发亮"，隔着屏幕也看得见 */
-const HALO_SCALE: Record<MapLevel, number> = { none: 0, blue: 1.6, yellow: 1.9, orange: 2.2, red: 2.6 }
+// 光晕只是「比周围重要」的提示，不是数据。原来 red 放到 2.6 倍，十个站点挤在一起
+// 会糊成一片粉雾，把底图路名全盖住——光晕一多就成了噪点，反而看不出哪个最要紧。
+const HALO_SCALE: Record<MapLevel, number> = { none: 0, blue: 1.45, yellow: 1.55, orange: 1.7, red: 1.9 }
 
 /** 气泡半径：下限 6px（不给小深度的点消失），随深度增长但压住上限避免糊成一团 */
 function bubbleRadius(depth: number): number {
@@ -213,7 +215,16 @@ export function RealMap({
               key={`halo-${p.id}`}
               center={[p.glat, p.glon]}
               radius={halo ? r * halo : 0}
-              pathOptions={{ color, weight: 0, fillColor: color, fillOpacity: active ? 0.26 : 0.15 }}
+              pathOptions={{
+                color,
+                weight: 1,
+                opacity: 0.3,
+                fillColor: color,
+                fillOpacity: active ? 0.22 : 0.13,
+                // 只有红色站脉动：屏幕上动的必须是最该看的那几个，
+                // 十站一起闪等于十站都不闪。
+                className: p.level === 'red' ? 'wl-map-pulse' : undefined,
+              }}
               interactive={false}
             />
           )
@@ -246,6 +257,28 @@ export function RealMap({
                   ) : null}
                   <div style={{ color: '#8497A6', fontSize: 10, marginTop: 2 }}>点击查看详情</div>
                 </div>
+              </Tooltip>
+            </CircleMarker>
+          )
+        })}
+        {/* 常显站名必须挂在**自己的图层**上。
+            同一个 CircleMarker 上放两个 <Tooltip> 会被 Leaflet 收纳成同一个图层：
+            permanent 属性来自第一个、内容却是最后一个的，结果每站都常显一整块浮窗。
+            用一个 0 半径的隐形锚点承载标签，两个浮窗各归各的。 */}
+        {pts.map((p) => {
+          const active = p.id === focusId
+          if (p.level !== 'red' && p.level !== 'orange' && !active) return null
+          return (
+            <CircleMarker
+              key={`label-${p.id}`}
+              center={[p.glat, p.glon]}
+              radius={0}
+              pathOptions={{ opacity: 0, fillOpacity: 0 }}
+              interactive={false}
+            >
+              <Tooltip permanent direction="right" offset={[9, 0]} opacity={1} className="wl-map-label">
+                <span>{p.name}</span>
+                {p.level === 'red' ? <b style={{ marginLeft: 4 }}>{p.depth.toFixed(2)}m</b> : null}
               </Tooltip>
             </CircleMarker>
           )

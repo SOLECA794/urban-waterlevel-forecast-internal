@@ -175,3 +175,47 @@ func (s *Store) Warnings(activeOnly bool, limit int) ([]domain.WarningEvent, err
 	}
 	return out, rows.Err()
 }
+
+// ArchiveStaleOpen 把「挂了太久」的活动预警直接归档。
+//
+// 存在的理由：仿真状态重建（bootstrap / reset-water）会让仿真时钟整体跳到另一个
+// 时间点，而库里未闭环的预警还带着旧时间线的 raised_at。不清理的话，那些事件既
+// 不会被重新 raise（站点已有活动事件，SyncWarning 只会 update），又永远关不掉，
+// 于是界面上出现「滞留 10757 小时」这种数字，值班交接表也全是幽灵事项。
+//
+// 判据只用一个：比 now 早 maxAgeSec 以上。这是无状态的——服务重启后第一次
+// ingest 就能自愈，不依赖任何启动时的快照比对。
+func (s *Store) ArchiveStaleOpen(now int64, maxAgeSec int64) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cut := now - maxAgeSec
+	res, err := s.db.Exec(`UPDATE warning_event
+	  SET state=?, cleared_at=?, updated_at=?
+	  WHERE state IN (?,?) AND raised_at < ?`,
+		domain.StateClearedAck, now, now,
+		domain.StateActiveUnack, domain.StateActiveAck, cut)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+// CountWarnings 返回符合条件的预警总数（不受 limit 影响）。
+//
+// 存在的理由：列表接口默认 limit=100，前端把返回条数直接当"总数"显示，
+// 于是页签写着「预警 100」——那其实是取数上限，不是真的只有 100 条。
+// 计数必须由数据库给，不能让客户端数它拿到的那一页。
+func (s *Store) CountWarnings(activeOnly bool) (int64, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	q := `SELECT COUNT(*) FROM warning_event`
+	if activeOnly {
+		q += ` WHERE state IN ('ACTIVE_UNACK','ACTIVE_ACK')`
+	}
+	var n int64
+	if err := s.db.QueryRow(q).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}

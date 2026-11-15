@@ -173,6 +173,14 @@ export function useShiftReport(hours = SHIFT_HOURS): ShiftReport {
 export function ageText(min: number): string {
   if (min < 1) return '刚刚'
   if (min < 60) return `${min} 分钟`
+  // 超过一天要说「天」，不能写「10757 小时」：那串数字读不出量级，
+  // 而且它一旦出现就说明数据有问题（仿真时钟跳变过的旧事件），
+  // 写成天数至少让人一眼看出「这是很久以前的事」。
+  if (min >= 1440) {
+    const d = Math.floor(min / 1440)
+    const h = Math.floor((min % 1440) / 60)
+    return h === 0 ? `${d} 天` : `${d} 天 ${h} 小时`
+  }
   const h = Math.floor(min / 60)
   const m = min % 60
   return m === 0 ? `${h} 小时` : `${h} 小时 ${m} 分`

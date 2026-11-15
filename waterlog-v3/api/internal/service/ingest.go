@@ -29,6 +29,13 @@ func (s *Service) IngestForecast(p domain.ForecastPayload) (int, map[string]stri
 
 	decErr := s.store.InsertDecisions(p)
 
+	// 时间线断了就先把幽灵预警归档，再同步四态。
+	// 阈值取 3 个仿真日：一场雨从升起到退水在 60x 下也就几小时，挂三天还没闭环
+	// 只能解释为仿真状态被重建过（raised_at 属于上一条时间线）。
+	if n, err := s.store.ArchiveStaleOpen(p.IssuedAt, 3*86400); err == nil && n > 0 {
+		s.hub.Broadcast("warning", map[string]any{"action": "archived", "count": n})
+	}
+
 	// 同步预警事件四态，并把变更广播出去
 	actions := map[string]string{}
 	for sid, sf := range p.Sites {

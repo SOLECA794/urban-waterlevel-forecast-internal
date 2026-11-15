@@ -246,9 +246,23 @@ $skillOk = (@($blend | Where-Object { $_.skill_vs_persistence -gt 0 }).Count -eq
 Check '融合模型全面优于持久化基线' $skillOk (($blend | ForEach-Object { "{0}min skill=+{1:N3}" -f $_.horizon_min, $_.skill_vs_persistence }) -join ' | ')
 $picpOk = (@($blend | Where-Object { $_.picp90 -ge 88 -and $_.picp90 -le 98 }).Count -eq 4)
 Check '90% 区间标定合理(88~98%)' $picpOk (($blend | ForEach-Object { "{0}min PICP90={1:N1}%" -f $_.horizon_min, $_.picp90 }) -join ' | ')
+# 判据从「线性的 skill 必须为负」改成「融合模型每档都要明显胜过线性」。
+# 原来的写法断言的是数据的性质而不是系统的性质：新的降雨分布里 60min 的线性
+# 外推 skill=+0.028（雨更连续时"沿用当前变化率"没那么差），这条就红了，
+# 而它红了并不说明系统坏了。真正要守住的是"上线的融合模型必须比这个朴素
+# 对照好一截"——差 0.15 以上才算真的好。
 $lin = @($L.metrics.linear)
-$linWorse = (@($lin | Where-Object { $_.skill_vs_persistence -lt 0 }).Count -eq 4)
-Check '线性外推劣于基线（证明预测有价值）' $linWorse (($lin | ForEach-Object { "{0}min skill={1:N3}" -f $_.horizon_min, $_.skill_vs_persistence }) -join ' | ')
+$linGap = @($blend | ForEach-Object {
+  $h = $_.horizon_min
+  $linRow = $lin | Where-Object { $_.horizon_min -eq $h } | Select-Object -First 1
+  if ($null -eq $linRow) { -99 } else { $_.skill_vs_persistence - $linRow.skill_vs_persistence }
+})
+$linBeaten = (@($linGap | Where-Object { $_ -ge 0.15 }).Count -eq 4)
+Check '融合模型每档都明显胜过线性外推(>=0.15)' $linBeaten (($blend | ForEach-Object {
+  $h = $_.horizon_min
+  $linRow = $lin | Where-Object { $_.horizon_min -eq $h } | Select-Object -First 1
+  "{0}min blend={1:N3} linear={2:N3}" -f $h, $_.skill_vs_persistence, $(if ($null -eq $linRow) { 'NA' } else { "{0:N3}" -f $linRow.skill_vs_persistence })
+}) -join ' | ')
 $ev = @($blend | Where-Object { $_.event_n -gt 0 })
 Check '事件样本指标已单报' ($ev.Count -eq 4) (($ev | ForEach-Object { "{0}min event_skill=+{1:N3}" -f $_.horizon_min, $_.event_skill }) -join ' | ')
 Check '特征重要性有数据' (@($L.feature_importance).Count -gt 0) ("top1=" + $L.feature_importance[0].name + " " + [Math]::Round($L.feature_importance[0].importance, 3))

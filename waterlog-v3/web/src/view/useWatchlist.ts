@@ -70,8 +70,15 @@ function compare(sort: WatchSort) {
         return b.reading.rain - a.reading.rain
       case 'level':
       default:
+        // 同档里比**绝对水深**，再比综合分。
+        // 综合分里含时长与趋势（退水的站会被压低），可三个红色站摆在一起时，
+        // 值班员要先去的是水最深那一个，不是分数最高的那一个。实测撞到过
+        // 3.18m 排在 0.88m 后面。用绝对水深而不是"超红阈倍数"，是因为跨站
+        // 比较时人读的是米：台州 3.14m 与西城 2.80m 摆一起，说前者更严重
+        // 没人会反对；按倍数排则可能选出 2.80m 那个，与左栏第一行打架。
         return (
           LEVEL_RANK[b.assessment.level] - LEVEL_RANK[a.assessment.level] ||
+          b.reading.depth - a.reading.depth ||
           b.assessment.score - a.assessment.score
         )
     }

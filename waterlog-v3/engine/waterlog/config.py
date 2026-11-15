@@ -113,3 +113,19 @@ TICK_SEC = float(os.environ.get("WL_TICK_SEC", "5"))          # 每 tick 推进 
 FORECAST_EVERY_SEC = float(os.environ.get("WL_FORECAST_EVERY_SEC", "60"))
 SIM_SEED = int(os.environ.get("WL_SIM_SEED", "20261021"))
 
+# ---------------------------------------------------------------- 天气旋钮
+#
+# 默认值不是「最真实」，是「演示时屏幕上一直在动」。
+# 真实黄岩的暴雨频率大约是 0.85 场/天，按 60 倍速折算约半小时墙钟一场，
+# 中间十站读数一动不动 —— 对值班来说那是正常，对演示来说那是坏了。
+# 这三个量只影响「下多少雨」，不动物理参数，所以历史数据集与模型不受影响。
+
+RAIN_RATE_SCALE = float(os.environ.get("WL_RAIN_RATE_SCALE", "7.0"))   # 到达率倍数
+RAIN_PEAK_SCALE = float(os.environ.get("WL_RAIN_PEAK_SCALE", "1.6"))  # 场次峰值倍数
+RAIN_BG_MM = float(os.environ.get("WL_RAIN_BG_MM", "2.2"))             # 背景雨幅度（mm/h）
+# 短时阵雨（cells）：2~8 步（10~40 分钟）的小尺度对流，峰值 3~16mm/h。
+# 它不制造内涝（低于管网排水能力，深度只抖一抖），但它让「雨强/综合分/趋势」
+# 每一帧都在变——否则打开页面看到一排不动的小数，会以为数据源死了。
+# 频率单位是「场/仿真日」，按 60 倍速折算约 1.5 分钟墙钟一场。
+RAIN_DRIZZLE_PER_DAY = float(os.environ.get("WL_RAIN_DRIZZLE_PER_DAY", "16"))
+

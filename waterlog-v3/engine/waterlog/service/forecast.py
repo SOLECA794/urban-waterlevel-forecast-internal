@@ -35,6 +35,19 @@ SLOPE_COL = col("slope_1h")
 OBSERVED_WINDOW_MIN = 180
 OBSERVED_WINDOW_STEPS = OBSERVED_WINDOW_MIN // STEP_MIN
 
+# ---- 增量预测的两道物理闸门（都写在最显眼处，因为它们决定了图上那条线可信不可信）
+#
+# ① 速率包络：GBR 学的是「增量」。当前水深一旦远超训练分布（训练集最深约 0.82m，
+#    一场暴雨能把实测推到 2.7m），树模型对 OOD 输入只能给出最近叶子的均值，
+#    外推出的增量就不再是预测，而是「回归到训练均值」的假象 —— 曾经出现
+#    「1 小时后退水 1.2 米」，而双面积水库的堰流 + 管排实测退水只有 0.02~0.2 m/h。
+#    这不是给模型加手脚，是把它说的话限制在模拟器自己能做到的范围内。
+RISE_MAX_MH = 0.60   # 最快上涨速率（m/h）：短历时强降雨 + 汇流叠加的实测上限
+FALL_MAX_MH = 0.22   # 最快退水速率（m/h）：堰流 + 管网抽排的实测上限
+#
+# ② 置信带最小半宽。负宽度是撒谎；零宽度是另一种撒谎（「我们知道得非常准」）。
+BAND_MIN = 0.004
+
 
 # ------------------------------------------------------------------ 插值
 
@@ -196,13 +209,19 @@ class ForecastService:
 
         for i, sid in enumerate(SITE_IDS):
             site = SITE_BY_ID[sid]
+            # 当前水深：上限与置信带的兜底都要用它，所以每个站点只算一次
+            depth_now = max(0.0, float(now_level[i]) - site.base_level)
             dec = decide(sid, self._signals(ds, origin, i), self.rules, self.corrector)
             self.store.add_decision(now_ts, sid, dec.should_forecast, dec.model,
                                     round(dec.gain, 3), dec.reason, dec.signals)
 
             hs: list[dict] = []
             for hmin in HORIZONS_MIN:
-                raw = float(now_level[i] + deltas[hmin][i])
+                # 物理速率包络：涨不高于 RISE_MAX_MH、退不快于 FALL_MAX_MH（按小时缩放）
+                hrs = hmin / 60.0
+                d_model = float(deltas[hmin][i])
+                d_lim = float(np.clip(d_model, -FALL_MAX_MH * hrs, RISE_MAX_MH * hrs))
+                raw = float(now_level[i] + d_lim)
                 corr = self.corrector.apply(sid, hmin, raw)
                 sigma = float(self.bundle["sigma"][str(hmin)].get(sid, 0.05))
                 # 修正量硬上限：不超过 3σ。修正器再出问题，也不允许把曲线推出置信带，
@@ -210,16 +229,23 @@ class ForecastService:
                 applied = float(np.clip(corr.applied, -3 * sigma, 3 * sigma))
                 level = raw + applied
                 lo, hi = level - 1.6449 * sigma, level + 1.6449 * sigma
-                # 物理约束：水深不能为负、不能突破 1.5m（真实内涝的街道调蓄上限）
+                # 物理约束：水深不能为负；上限取「街道调蓄上限 1.5m」与「当前已经这么深了」
+                # 两者的较大者。硬写 1.5 会在实测已达 2.7m 时把预测钳到 1.5，
+                # 屏幕上就变成「一小时内凭空退水 1.2m，而且我们对此非常确定」。
                 floor = site.base_level
-                cap = site.base_level + 1.5
+                cap = site.base_level + max(1.5, depth_now * 1.6 + 0.35)
                 level = float(np.clip(level, floor, cap))
                 lo = float(np.clip(lo, floor, cap))
                 hi = float(np.clip(hi, floor, cap))
+                if hi - level < BAND_MIN:
+                    hi = min(cap + 0.30, level + BAND_MIN)
+                if level - lo < BAND_MIN:
+                    lo = max(floor, level - BAND_MIN)
                 hs.append({"horizon_min": hmin, "level": round(level, 4),
                            "lower": round(lo, 4), "upper": round(hi, 4),
                            "delta": round(level - float(now_level[i]), 4),
-                           "delta_raw": round(raw - float(now_level[i]), 4),
+                           "delta_raw": round(d_lim, 4),
+                           "delta_model": round(d_model, 4),
                            "corrected": round(applied, 4),
                            "gain": round(corr.gain, 3),
                            "sigma": round(sigma, 4),
@@ -231,13 +257,15 @@ class ForecastService:
             yk = np.array([float(now_level[i])] + [h["level"] for h in hs])
             dense = pchip(xk, yk, self._dense_offsets)
             dense[0] = float(now_level[i])
-            dense = np.clip(dense, site.base_level, site.base_level + 1.5)
+            cap_i = site.base_level + max(1.5, depth_now * 1.6 + 0.35)
+            dense = np.clip(dense, site.base_level, cap_i)
             lo_k = np.array([float(now_level[i])] + [h["lower"] for h in hs])
             hi_k = np.array([float(now_level[i])] + [h["upper"] for h in hs])
-            d_lo = np.clip(pchip(xk, lo_k, self._dense_offsets), site.base_level, site.base_level + 1.5)
-            d_hi = np.clip(pchip(xk, hi_k, self._dense_offsets), site.base_level, site.base_level + 1.5)
-            d_lo = np.minimum(d_lo, dense)
-            d_hi = np.maximum(d_hi, dense)
+            d_lo = np.clip(pchip(xk, lo_k, self._dense_offsets), site.base_level, cap_i)
+            d_hi = np.clip(pchip(xk, hi_k, self._dense_offsets), site.base_level, cap_i)
+            # 带子不许塌成一条线：零宽度在屏幕上的意思就是「毫无不确定性」，那是假话
+            d_lo = np.maximum(np.minimum(d_lo, dense - BAND_MIN), site.base_level)
+            d_hi = np.maximum(d_hi, dense + BAND_MIN)
             curve = [[int(o), round(float(v), 4), round(float(a), 4), round(float(b), 4)]
                      for o, v, a, b in zip(self._dense_offsets, dense, d_lo, d_hi)]
 

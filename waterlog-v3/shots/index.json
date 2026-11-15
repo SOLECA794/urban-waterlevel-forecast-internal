@@ -1,9 +1,5 @@
 [
  {
-  "file": "shots/board-edit.png",
-  "bytes": 1247055
- },
- {
   "file": "shots/board-light-s0.png",
   "bytes": 686912
  },
@@ -18,6 +14,46 @@
  {
   "file": "shots/board-light.png",
   "bytes": 411562
+ },
+ {
+  "file": "shots/board9-01-overview.png",
+  "bytes": 367322
+ },
+ {
+  "file": "shots/board9-02-zmap.png",
+  "bytes": 738862
+ },
+ {
+  "file": "shots/board9-03-zlines.png",
+  "bytes": 295379
+ },
+ {
+  "file": "shots/board9-04-zline1.png",
+  "bytes": 133162
+ },
+ {
+  "file": "shots/board9-05-zpoints.png",
+  "bytes": 118720
+ },
+ {
+  "file": "shots/board9-06-zcross.png",
+  "bytes": 137349
+ },
+ {
+  "file": "shots/board9-07-zacc.png",
+  "bytes": 119867
+ },
+ {
+  "file": "shots/board9-08-zrank.png",
+  "bytes": 123231
+ },
+ {
+  "file": "shots/board9-09-zrain.png",
+  "bytes": 76848
+ },
+ {
+  "file": "shots/board9-nine.png",
+  "bytes": 661563
  },
  {
   "file": "shots/prod-board-s0.png",
@@ -37,86 +73,86 @@
  },
  {
   "file": "shots/tour-01.png",
-  "bytes": 309338
+  "bytes": 317853
  },
  {
   "file": "shots/tour-02.png",
-  "bytes": 334161
+  "bytes": 337423
  },
  {
   "file": "shots/tour-03.png",
-  "bytes": 294390
+  "bytes": 329884
  },
  {
   "file": "shots/tour-04.png",
-  "bytes": 291833
+  "bytes": 323034
  },
  {
   "file": "shots/tour-05.png",
-  "bytes": 209426
+  "bytes": 247390
  },
  {
   "file": "shots/tour-06.png",
-  "bytes": 213935
+  "bytes": 246964
  },
  {
   "file": "shots/tour-07.png",
-  "bytes": 220739
+  "bytes": 256434
  },
  {
   "file": "shots/tour-08.png",
-  "bytes": 270659
+  "bytes": 306159
  },
  {
   "file": "shots/tour-09.png",
-  "bytes": 236194
+  "bytes": 272144
  },
  {
   "file": "shots/workbench-01-home.png",
-  "bytes": 317416
+  "bytes": 327659
  },
  {
   "file": "shots/workbench-02-rail-state.png",
-  "bytes": 317339
+  "bytes": 327676
  },
  {
   "file": "shots/workbench-03-site-stage.png",
-  "bytes": 197859
+  "bytes": 233432
  },
  {
   "file": "shots/workbench-04-drill-2.png",
-  "bytes": 199725
+  "bytes": 234061
  },
  {
   "file": "shots/workbench-05-esc.png",
-  "bytes": 199596
+  "bytes": 233254
  },
  {
   "file": "shots/workbench-06-fact-governance.png",
-  "bytes": 265877
+  "bytes": 308363
  },
  {
   "file": "shots/workbench-06-fact-handoff.png",
-  "bytes": 139723
+  "bytes": 287581
  },
  {
   "file": "shots/workbench-06-fact-plumbing.png",
-  "bytes": 251214
+  "bytes": 284468
  },
  {
   "file": "shots/workbench-06-fact-situation.png",
-  "bytes": 316421
+  "bytes": 327519
  },
  {
   "file": "shots/workbench-06-fact-trust.png",
-  "bytes": 240716
+  "bytes": 283600
  },
  {
   "file": "shots/workbench-07-event-stage.png",
-  "bytes": 197977
+  "bytes": 201310
  },
  {
   "file": "shots/workbench-08-narrow.png",
-  "bytes": 173227
+  "bytes": 174609
  }
 ]

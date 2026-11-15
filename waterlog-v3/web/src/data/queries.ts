@@ -160,6 +160,20 @@ export function useAlerts(activeOnly: boolean) {
   })
 }
 
+/**
+ * 预警总数（数据库口径，不是"取回来多少条"）。
+ *
+ * 页签上的「预警 N」必须用它：列表接口默认 limit=100，用 `useAlerts().data.length`
+ * 会在超过一百条时永远显示 100，看起来像「刚好一百条」。
+ */
+export function useAlertTotal(activeOnly: boolean): number | null {
+  return useQuery({
+    queryKey: [...qk.alerts(activeOnly), 'total'] as const,
+    queryFn: async (): Promise<number> => (await transport.alerts(activeOnly)).total ?? 0,
+    refetchInterval: 30_000,
+  }).data ?? null
+}
+
 export function useAlertDetail(id: number | null) {
   return useQuery({
     queryKey: qk.alert(id ?? -1),

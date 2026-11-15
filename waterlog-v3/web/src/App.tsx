@@ -3,6 +3,7 @@ import { RequireAuth } from './components/RequireAuth'
 import { LoginPage } from './pages/LoginPage'
 import { TourHost } from './components/TourHost'
 import BoardPage from './board/BoardPage'
+import { NineBoard } from './board/NineBoard'
 import { WorkbenchPage } from './workbench/WorkbenchPage'
 
 /**
@@ -28,8 +29,11 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route element={<RequireAuth />}>
-          {/* 大厅大屏：无交互轮换，投到墙上用的 */}
-          <Route path="/board" element={<BoardPage />} />
+          {/* 展厅大屏：九页轮播，只讲水位预测（1 总览 + 8 放大）。
+              旧的三屏大屏保留在 /board/legacy —— 它是「值班常驻」那一套，
+              和展厅讲解不是同一个用途，删掉等于把值班台的常驻屏弄没了。 */}
+          <Route path="/board" element={<NineBoard />} />
+          <Route path="/board/legacy" element={<BoardPage />} />
           {/* 工作台：整个系统就这一屏 */}
           <Route path="/" element={<WorkbenchPage />} />
           {/* 旧的 /w 别名保留：上一轮交接时发出去的链接还能打开 */}

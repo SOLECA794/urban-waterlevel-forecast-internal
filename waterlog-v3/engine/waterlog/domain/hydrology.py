@@ -27,7 +27,9 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from waterlog.config import DT_SEC, SITES, STEP_MIN, Site
+from waterlog.config import (DT_SEC, RAIN_BG_MM, RAIN_DRIZZLE_PER_DAY,
+                            RAIN_PEAK_SCALE, RAIN_RATE_SCALE, SITES,
+                            STEP_MIN, Site)
 
 LOOKAHEAD_STEPS = 12 * 60 // STEP_MIN   # 未来 12h 的雨量预生成，供"气象预报"派生
 
@@ -62,6 +64,11 @@ class RainProcess:
         self.rng = rng
         self.storms: list[Storm] = []
         self.next_arrival = start_step + self._gap(start_step)
+        # 短时阵雨单独一条到达过程：它和内涝场次（storms）共用 rain[]，
+        # 但不进 storms 列表——风暴列表用于状态落盘与"本场雨量"统计，
+        # 而阵雨是十几分钟的扰动，落盘它只会让状态文件变大、恢复变脆。
+        self.cells: list[Storm] = []
+        self.next_cell = start_step + self._cell_gap(start_step)
         self.rain: list[float] = []      # mm/h，每步一个值（城市平均）
         self._generated = 0
 
@@ -72,15 +79,22 @@ class RainProcess:
                   7: 1.2, 8: 1.15, 9: 0.8, 10: 0.55, 11: 0.35, 12: 0.28}[month]
         hour = ((step * STEP_MIN) // 60) % 24
         diurnal = 1.55 if 14 <= hour <= 21 else (0.55 if 3 <= hour <= 8 else 1.0)
-        rate_per_day = 0.85 * season * diurnal      # 期望暴雨场次/天
+        rate_per_day = 0.85 * season * diurnal * RAIN_RATE_SCALE   # 期望暴雨场次/天
         return max(1, int(self.rng.exponential(1.0 / max(rate_per_day, 0.05)) * 24 * 60 / STEP_MIN))
+
+    def _cell_gap(self, step: int) -> int:
+        """短时阵雨的到达间隔（步）。不受季节/日变化调制 —— 它只是让读数在动。"""
+        rate = max(RAIN_DRIZZLE_PER_DAY, 0.1)
+        return max(2, int(self.rng.exponential(1.0 / rate) * 24 * 60 / STEP_MIN))
 
     def _spawn(self, step: int) -> Storm:
         rng = self.rng
-        dur = int(np.clip(rng.lognormal(math.log(45), 0.50), 6, 96))       # 30min ~ 8h
+        dur = int(np.clip(rng.lognormal(math.log(52), 0.48), 8, 120))      # 40min ~ 10h
         peak = float(np.clip(rng.lognormal(math.log(26), 0.62), 3, 240))   # mm/h
-        if rng.random() < 0.07:                                            # 极端场次
-            peak *= float(rng.uniform(2.0, 3.4))
+        peak *= RAIN_PEAK_SCALE
+        if rng.random() < 0.14:                                            # 极端场次
+            peak *= float(rng.uniform(2.2, 3.8))
+        peak = float(np.clip(peak, 3.0, 320.0))
         return Storm(step, dur, peak, rise=float(rng.uniform(0.25, 0.45)),
                      tail=float(rng.uniform(0.35, 0.6)))
 
@@ -92,10 +106,25 @@ class RainProcess:
                 storm = self._spawn(s)
                 self.storms.append(storm)
                 self.next_arrival = s + self._gap(s)
+            if s >= self.next_cell:
+                # 阵雨：短、尖、弱。峰值 3~16mm/h，持续 2~8 步。
+                dur = int(np.clip(self.rng.lognormal(math.log(4), 0.45), 2, 8))
+                peak = float(np.clip(self.rng.lognormal(math.log(7), 0.5), 3, 16))
+                self.cells.append(Storm(s, dur, peak,
+                                        rise=float(self.rng.uniform(0.2, 0.4)),
+                                        tail=float(self.rng.uniform(0.3, 0.5))))
+                self.next_cell = s + self._cell_gap(s)
             total = sum(st.intensity(s) for st in self.storms if st.start + st.dur > s)
-            total += 0.6 * max(0.0, math.sin(s / 37.0)) * 0.4   # 微量背景降水
+            total += sum(st.intensity(s) for st in self.cells if st.start + st.dur > s)
+            # 背景雨：两周期不可公度（37 与 91 步），叠加后不会很快重复；
+            # 取半波非负，最大 2*RAIN_BG_MM。它的作用不是「更真实」，
+            # 是让两次场次之间的读数也在动 —— 一串恒定数字会让人以为数据源死了。
+            bg = RAIN_BG_MM * (0.55 * (math.sin(s / 37.0) + 1.0) * 0.5
+                               + 0.45 * (math.sin(s / 91.0 + 1.7) + 1.0) * 0.5)
+            total += max(0.0, bg)
             self.rain.append(total)
             self.storms = [st for st in self.storms if st.start + st.dur > s - 4]
+            self.cells = [st for st in self.cells if st.start + st.dur > s - 4]
             self._generated += 1
 
     def window(self, start: int, stop: int) -> np.ndarray:
@@ -242,8 +271,13 @@ class Simulator:
     def load_state(self, st: dict) -> None:
         self.step = int(st["step"])
         self.h = np.asarray(st["h"], dtype=float)
-        self.rain.rain = [float(x) for x in st["rain_series"]]
-        self.rain._generated = int(st["rain_generated"])
+        # 只保留到当前步的雨量，丢掉落盘时预生成的 future lookahead。
+        # 理由：lookahead 是缓存不是状态 —— 它由「落盘那一刻的天气参数」算出。
+        # 如果连它一起恢复，改了到达率/背景雨之后要等 12h 仿真（约 12 分钟墙钟）
+        # 才能看到新参数，而这期间屏幕上是旧参数算出来的雨，看上去像"改了没生效"。
+        keep = max(0, self.step)
+        self.rain.rain = [float(x) for x in st["rain_series"][:keep]]
+        self.rain._generated = min(int(st["rain_generated"]), keep)
         self.rain.next_arrival = int(st["next_arrival"])
         arr = np.asarray(st["storms"], dtype=float)
         self.rain.storms = [Storm(int(a[0]), int(a[1]), float(a[2]), float(a[3]), float(a[4])) for a in arr] if arr.size else []

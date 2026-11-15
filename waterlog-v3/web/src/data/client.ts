@@ -109,7 +109,9 @@ export const transport = {
 
   // ---------------------------------------------------------------- 预警
   alerts: (activeOnly = true, limit = 100) =>
-    req<{ alerts: WarningEventDTO[] }>(`/api/alerts?active=${activeOnly ? 1 : 0}&limit=${limit}`),
+    req<{ alerts: WarningEventDTO[]; total?: number }>(
+      `/api/alerts?active=${activeOnly ? 1 : 0}&limit=${limit}`,
+    ),
   alertDetail: (id: number) => req<AlertDetailRespDTO>(`/api/alerts/${id}`),
   ack: (id: number) =>
     req<{ ok: boolean; state: string }>(`/api/alerts/${id}/ack`, { method: 'POST' }),

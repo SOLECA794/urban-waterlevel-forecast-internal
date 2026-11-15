@@ -386,6 +386,36 @@ body {
   border: 0 !important;
 }
 
+/* 常显站名：橙/红站的名片压在地图路名上，必须有半透明白底才读得出来。
+   指针事件关掉——它是一个标签，不是一个可以点的东西。 */
+.leaflet-tooltip.wl-map-label {
+  padding: 1px 5px !important;
+  border-radius: 4px !important;
+  border: 0 !important;
+  background: rgba(255,255,255,0.93) !important;
+  background-color: rgba(255,255,255,0.93) !important;
+  color: #0D1F33 !important;
+  font-size: 10.5px !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+  box-shadow: 0 1px 4px rgba(13,31,51,0.18) !important;
+  opacity: 1 !important;
+  pointer-events: none !important;
+}
+.leaflet-tooltip.wl-map-label::before {
+  display: none !important;
+  border: 0 !important;
+}
+
+/* 红色站的脉动：只有最该看的几个在动，动的是「还没处理完」这件事本身。 */
+@keyframes wl-map-pulse {
+  0% { stroke-width: 0; stroke-opacity: 0.55; }
+  70%, 100% { stroke-width: 12; stroke-opacity: 0; }
+}
+.wl-map-pulse {
+  animation: wl-map-pulse 2.6s ease-out infinite;
+}
+
 /* 尊重系统设置：开了「减少动效」就把所有过渡压到近零。
    地图 flyTo 由 Leaflet JS 驱动，这里管不到，所以 RealMap 里也没做动画时长分支。 */
 @media (prefers-reduced-motion: reduce) {

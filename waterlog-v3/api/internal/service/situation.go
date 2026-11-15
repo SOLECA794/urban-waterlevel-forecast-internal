@@ -249,6 +249,11 @@ func (s *Service) ListAlerts(activeOnly bool, limit int) ([]domain.WarningEvent,
 	return evs, nil
 }
 
+// CountAlerts 返回预警总数（不受分页 limit 影响）。
+func (s *Service) CountAlerts(activeOnly bool) (int64, error) {
+	return s.store.CountWarnings(activeOnly)
+}
+
 // AlertDetail 返回单条预警及其处置记录。
 func (s *Service) AlertDetail(id int64) (*domain.WarningEvent, []domain.AlertNote, error) {
 	ev, err := s.store.WarningByID(id)

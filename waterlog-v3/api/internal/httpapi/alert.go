@@ -30,7 +30,10 @@ func (s *Server) listAlerts(w http.ResponseWriter, r *http.Request) {
 		failErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"alerts": evs})
+	// total 是数据库里的真总数：前端页签要显示「预警 N」，
+	// 数返回条数会数到 limit（100）上，看起来像「刚好一百条」。
+	total, _ := s.svc.CountAlerts(activeOnly)
+	writeJSON(w, http.StatusOK, map[string]any{"alerts": evs, "total": total})
 }
 
 // alertDetail 返回一条预警及其全部处置记录（派单、状态推进、备注）。

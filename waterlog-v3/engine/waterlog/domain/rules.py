@@ -81,12 +81,15 @@ def _ratio(peak_m: float, thr: tuple[float, float, float, float]) -> float:
 
 def assess(site_id: str, level_series: np.ndarray, rules: dict,
            horizon_min: int | None = None,
-           apply_min_duration: bool = True) -> WarningResult:
+           apply_min_duration: bool = True,
+           now_index: int = 0) -> WarningResult:
     """level_series: 当前时刻起、等间隔 STEP_MIN 的水位序列（含 t0 与未来）。
 
     apply_min_duration: 是否应用「持续门槛降级」。预测序列必须应用（还没发生的
     事不能凭一瞬就报高级），实测序列不应用（已经漫过去了是既成事实）——
     见 assess_observed() 的口径说明。
+    now_index: 序列里哪一端是「当前」。预测序列的当前在开头（0），实测序列的
+    当前在结尾（-1）。这道参数只服务于下面那条「既成事实」下限。
     """
     site = SITE_BY_ID[site_id]
     thr = site.thresholds
@@ -144,22 +147,65 @@ def assess(site_id: str, level_series: np.ndarray, rules: dict,
     # 趋势跨档：猛涨升一级、明显退水降一级
     up = float(rules.get("trend_upgrade_slope", 0.25))
     down = float(rules.get("trend_downgrade_slope", -0.15))
+    up_level = False
+    down_level = False
     if level != "none" and slope >= up:
         i = LEVELS.index(level)
         if i < len(LEVELS) - 1:
             level = LEVELS[i + 1]
+            up_level = True
             blocked = None
     elif level != "none" and slope <= down:
         i = LEVELS.index(level)
         level = LEVELS[i - 1] if i > 0 else "none"
+        down_level = True
 
     min_level = int(rules.get("min_level_for_alarm", 1))
     if level != "none" and LEVEL_RANK[level] < min_level:
         level = "none"
 
+    # ---- 既成事实下限
+    # 三因子分档允许「退水」把等级压下来（趋势因子只拿 20% 权重），可它压不出
+    # 「现在水里还泡着 3.19m、红阈只有 0.46m，却报橙色」这种读感。凡是当前
+    # 水深仍高于某一档阈值，等级不得低于那一档——这一条不看趋势，只看事实。
+    now_h = float(h[now_index])
+    floor = "none"
+    for name in LEVELS:
+        if now_h >= float(thr[LEVELS.index(name)]):
+            floor = name
+    floored = False
+    if LEVEL_RANK.get(floor, 0) > LEVEL_RANK.get(level, 0):
+        level = floor
+        floored = True
+        blocked = None
+
     reason = (f"峰值 {peak_h:.2f}m（{peak_level}，第 {i_peak * STEP_MIN}min）、"
-              f"超阈持续 {duration_min}min、1h 趋势 {slope:+.2f}m/h → 综合分 {score:.2f} → "
-              f"{LEVEL_LABEL[level]}")
+              f"超阈持续 {duration_min}min、1h 趋势 {slope:+.2f}m/h → 综合分 {score:.2f}")
+    if up_level:
+        reason += "（猛涨升一级）"
+    elif down_level:
+        reason += "（明显退水降一级）"
+    if floored:
+        reason += f"；但当前仍超{LEVEL_LABEL[floor]}阈（{now_h:.2f}m ≥ {thr[LEVELS.index(floor)]:.2f}m），按既成事实不再降级"
+    reason += f" → {LEVEL_LABEL[level]}"
+
+    result = WarningResult(
+        level=level, score=round(score, 4),
+        factors=FactorDetail(peak=peak_h, duration=duration_min, trend=slope,
+                             peak_norm=round(peak_norm, 4),
+                             duration_norm=round(duration_norm, 4),
+                             trend_norm=round(trend_norm, 4),
+                             score=round(score, 4)),
+        peak_level=peak_level, peak_value=peak_h,
+        peak_min=i_peak * STEP_MIN, peak_at_min=i_peak * STEP_MIN,
+        duration_min=duration_min, slope_mh=round(slope, 4),
+        reason=reason, blocked_by=blocked,
+    )
+    # `still_over` 是「此刻是否仍在峰值档阈值之上」。assess_observed() 要拿它决定
+    # 措辞是「目前仍在超阈」还是「现已回落至阈值以下」——这个字段此前只被读、
+    # 从来没被写过，于是每一句实测结论都在说「已回落」，哪怕还泡在三米水里。
+    result.__dict__["still_over"] = bool(now_h >= float(thr[max(LEVEL_RANK.get(peak_level, 1) - 1, 0)]))
+    return result
 
     return WarningResult(
         level=level, score=round(score, 4),
@@ -193,7 +239,7 @@ def assess_observed(site_id: str, observed_levels: np.ndarray, rules: dict,
     series = np.asarray(observed_levels, dtype=float)
     # 实测侧取消持续门槛降级：水已经漫过某档阈值就是既成事实，
     # 不该因为「还没泡够 60 分钟」把红色压成黄色。趋势跨档与等级兜底仍然生效。
-    res = assess(site_id, series, rules, window_min, apply_min_duration=False)
+    res = assess(site_id, series, rules, window_min, apply_min_duration=False, now_index=-1)
 
     # ---- 重算「连续超阈」：assess() 给的是窗口内累计，实测侧要的是当前这一段。
     # 从序列末尾往前数，直到第一次跌破 peak_level 对应阈值为止。
