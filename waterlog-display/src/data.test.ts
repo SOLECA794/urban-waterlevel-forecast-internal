@@ -152,3 +152,60 @@ test('non-finite step input is normalised to a valid snapshot', () => {
   const snap = createDemoSnapshot(Number.NaN)
   assert.deepEqual(snap, createDemoSnapshot(0))
 })
+
+// ---- New coverage for the "research plotting / 10-station comparison" round ----
+
+test('3h / 6h / 12h forecast depths differ markedly for at least 8 stations across steps', () => {
+  for (const step of [0, 3, 7, 20, 50]) {
+    const snap = createDemoSnapshot(step)
+    let qualifying = 0
+    const examples: string[] = []
+    snap.stations.forEach(s => {
+      const atHours = (h: number) => s.forecast[h * 12].depth
+      const d3 = atHours(3)
+      const d6 = atHours(6)
+      const d12 = atHours(12)
+      const ok = Math.abs(d3 - d6) > 0.03 && Math.abs(d6 - d12) > 0.03
+      if (ok) {
+        qualifying++
+        if (examples.length < 2) examples.push(`${s.id}: 3h=${d3} 6h=${d6} 12h=${d12}`)
+      }
+    })
+    assert.ok(qualifying >= 8,
+      `step=${step}: only ${qualifying}/10 stations have |d3-d6|>0.03 and |d6-d12|>0.03 (${examples.join('; ')})`)
+  }
+})
+
+test('10 stations show distinct forecast shapes at the same instant (not one shared curve)', () => {
+  for (const step of [3, 20]) {
+    const snap = createDemoSnapshot(step)
+    const shapes = snap.stations.map(s => {
+      const base = s.forecast[0].depth
+      return [3, 6, 12].map(h => s.forecast[h * 12].depth - base).map(v => v.toFixed(3)).join('/')
+    })
+    assert.ok(new Set(shapes).size >= 8, `step=${step}: distinct forecast shapes ${new Set(shapes).size}/10`)
+    assert.ok(atDepthSpan(snap.stations.map(s => s.actual)) > 0.1,
+      `step=${step}: actual depth span ${atDepthSpan(snap.stations.map(s => s.actual))}`)
+  }
+})
+
+test('adjacent ticks move water levels by > 0.02 m', () => {
+  let worst = Infinity
+  for (const step of [0, 3, 7, 20, 50]) {
+    const a = createDemoSnapshot(step)
+    const b = createDemoSnapshot(step + 1)
+    const maxDelta = Math.max(...a.stations.map((s, i) => Math.abs(s.actual - b.stations[i].actual)))
+    worst = Math.min(worst, maxDelta)
+    assert.ok(maxDelta > 0.02, `step=${step}: max depth delta ${maxDelta}`)
+  }
+  assert.ok(worst > 0.02, `worst adjacent-step delta ${worst}`)
+})
+
+test('warning-level mix spans at least 3 classes and is never all red', () => {
+  for (const step of [0, 3, 7, 20, 50]) {
+    const levels = new Set(createDemoSnapshot(step).stations.map(st =>
+      st.actual >= 0.65 ? 'red' : st.actual >= 0.5 ? 'orange' : st.actual >= 0.35 ? 'yellow' : st.actual >= 0.2 ? 'blue' : 'none'))
+    assert.ok(levels.size >= 3, `step=${step}: warning levels ${[...levels]}`)
+    assert.ok(!(levels.size === 1 && levels.has('red')), `step=${step}: all stations red`)
+  }
+})

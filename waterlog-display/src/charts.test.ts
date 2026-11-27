@@ -21,7 +21,7 @@ test('trend exposes six observed hours, twelve forecast hours, interval, thresho
   assert.match(html, /04:00/)
   assert.match(html, /22:00/)
   assert.match(html, /红色阈值/)
-  assert.match(html, /置信区间/)
+  assert.match(html, /90% 置信带/)
   assert.match(html, /观测/)
   assert.match(html, /预报/)
   assert.doesNotMatch(html, /NaN|Infinity/)

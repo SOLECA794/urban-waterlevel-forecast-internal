@@ -1,21 +1,25 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createDemoSnapshot } from './data'
 import type { Snapshot, Station, Level } from './types'
 import { LEVEL_COLORS, LEVEL_NAMES } from './types'
 import { StationMap } from './StationMap'
-import { TrendChart, FleetChart, RainChart, AccuracyChart, Sparkline } from './Charts'
-import { pageFromSearch, nextPage, rotationDelay } from './presentation'
-import { HOUR, LEVELS, dayText, timeText, levelOf, horizon, peak, statusCounts, fmtDepth, fmtRain } from './view'
+import {
+  TrendChart, FleetChart, RainChart, AccuracyChart, Sparkline,
+  HorizonIntervalChart, RiskHeatmap, HorizonMatrix, SiteMiniChart,
+} from './Charts'
+import { pageFromSearch } from './presentation'
+import { LEVELS, dayText, timeText, levelOf, horizon, peak, statusCounts, fmtDepth, fmtRain } from './view'
 
 type Page = 0 | 1
 
-function useDisplayClock() {
+function useDisplayClock(paused: boolean) {
   const [step, setStep] = useState(0)
   useEffect(() => {
+    if (paused) return
     const timer = window.setInterval(() => setStep(s => s + 1), 2200)
     return () => window.clearInterval(timer)
-  }, [])
+  }, [paused])
   return step
 }
 
@@ -61,7 +65,7 @@ function Donut({ counts, total }: { counts: Record<Level, number>; total: number
 
 function CalendarCard({ now }: { now: number }) {
   const base = new Date(now)
-  const year = base.getFullYear(), month = base.getMonth()
+  const year = base.getUTCFullYear(), month = base.getUTCMonth()
   const first = new Date(Date.UTC(year, month, 1)).getUTCDay()
   const days = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
   const today = base.getUTCDate()
@@ -95,7 +99,7 @@ function OperationCard({ snap, counts }: { snap: Snapshot; counts: Record<Level,
 }
 
 function StationList({ stations, selectedId, onSelect }: { stations: Station[]; selectedId: string; onSelect: (id: string) => void }) {
-  return <Panel title="监测点列表" subtitle="点击查看该点全部统计" accent="teal" className="panel-grow">
+  return <Panel title="监测点列表" subtitle="点击任一点 · 地图与图表同步" accent="teal" className="panel-grow">
     <ul className="station-list">
       {stations.map(s => {
         const lv = levelOf(s.actual, s.thresholds)
@@ -110,7 +114,7 @@ function StationList({ stations, selectedId, onSelect }: { stations: Station[]; 
   </Panel>
 }
 
-function AlertsCard({ snap, onSelect }: { snap: Snapshot; onSelect: (id: string) => void }) {
+function AlertsCard({ snap, selectedId, onSelect }: { snap: Snapshot; selectedId: string; onSelect: (id: string) => void }) {
   const alerts = [...snap.stations].filter(s => levelOf(s.actual, s.thresholds) !== 'none').sort((a, b) => b.actual - a.actual).slice(0, 6)
   return <Panel title="预警列表" subtitle={`当前 ${alerts.length} 条 · 点击定位`} extra={<span className="linkish">全部 →</span>} accent="orange">
     {alerts.length === 0 && <p className="empty-hint">当前无预警，全部监测点水位正常。</p>}
@@ -118,7 +122,7 @@ function AlertsCard({ snap, onSelect }: { snap: Snapshot; onSelect: (id: string)
       {alerts.map(s => {
         const lv = levelOf(s.actual, s.thresholds)
         const p = peak(s)
-        return <li key={s.id} onClick={() => onSelect(s.id)} tabIndex={0} onKeyDown={e => e.key === 'Enter' && onSelect(s.id)}>
+        return <li key={s.id} className={s.id === selectedId ? 'active' : ''} onClick={() => onSelect(s.id)} tabIndex={0} onKeyDown={e => e.key === 'Enter' && onSelect(s.id)}>
           <span className="alert-badge" style={{ background: LEVEL_COLORS[lv] }}>{LEVEL_NAMES[lv]}</span>
           <div className="alert-main"><b>{s.name}</b><small>水深 <b>{fmtDepth(s.actual)}</b> m · 雨强 {fmtRain(s.rain)} mm/h · 预计峰值 {fmtDepth(p.depth)} m</small></div>
         </li>
@@ -142,6 +146,22 @@ function RankingCard({ stations, selectedId, onSelect }: { stations: Station[]; 
         </li>
       })}
     </ul>
+  </Panel>
+}
+
+function LinkPanel({ station, now, onOpen }: { station: Station; now: number; onOpen: () => void }) {
+  const marks = [3, 6, 12].map(h => ({ h, p: horizon(station, h) })).filter(m => m.p)
+  return <Panel title="联动站点速览" subtitle="与地图 / 列表 / 预警 / 排行同源" accent="teal" className="link-card">
+    <button className="link-focus" onClick={onOpen}>
+      <div className="link-focus-head"><LevelChip level={levelOf(station.actual, station.thresholds)} /><span>{station.name}</span></div>
+      <b>{fmtDepth(station.actual)}<em>m</em></b>
+      <small>当前水深 · {fmtRain(station.rain)} mm/h · 12h 峰值 {fmtDepth(peak(station).depth)} m</small>
+      <div className="link-spark"><Sparkline values={station.history.slice(-30).map(p => p.depth)} color={LEVEL_COLORS[levelOf(station.actual, station.thresholds)]} /></div>
+    </button>
+    <div className="link-marks">
+      {marks.map(({ h, p }) => <div key={h}><small>+{h}h</small><b>{fmtDepth(p!.depth)}</b><span>{LEVEL_NAMES[levelOf(p!.depth, station.thresholds)]}</span></div>)}
+    </div>
+    <p className="link-foot">模拟时刻 {timeText(now)} · 点击任意站点查看完整详情</p>
   </Panel>
 }
 
@@ -169,26 +189,25 @@ function OverviewPage({ snap, selected, onSelect, showDetail, setShowDetail }: {
   snap: Snapshot; selected: Station; onSelect: (id: string) => void; showDetail: boolean; setShowDetail: (v: boolean) => void
 }) {
   const counts = statusCounts(snap.stations)
+  const pick = (id: string) => { onSelect(id); setShowDetail(true) }
   return <div className="page overview-page">
     <aside className="side left-side">
       <CalendarCard now={snap.now} />
       <OperationCard snap={snap} counts={counts} />
-      <StationList stations={snap.stations} selectedId={selected.id} onSelect={id => { onSelect(id); setShowDetail(true) }} />
+      <StationList stations={snap.stations} selectedId={selected.id} onSelect={pick} />
     </aside>
     <main className="map-stage">
-      <StationMap stations={snap.stations} selectedId={selected.id} onSelect={id => { onSelect(id); setShowDetail(true) }} />
+      <StationMap stations={snap.stations} selectedId={selected.id} onSelect={pick} />
       <div className="map-legend">
         {LEVELS.map(level => <span key={level}><i style={{ background: LEVEL_COLORS[level] }} />{LEVEL_NAMES[level]}</span>)}
       </div>
-      <div className="map-caption">台州市黄岩区 · 监测点分布（点击圆点查看统计）</div>
+      <div className="map-caption">台州市黄岩区 · 10 个监测点（点击圆点查看统计）</div>
       {showDetail && <SiteDetail station={selected} now={snap.now} onClose={() => setShowDetail(false)} />}
     </main>
     <aside className="side right-side">
-      <AlertsCard snap={snap} onSelect={id => { onSelect(id); setShowDetail(true) }} />
-      <RankingCard stations={snap.stations} selectedId={selected.id} onSelect={id => { onSelect(id); setShowDetail(true) }} />
-      <Panel title="站点轮换" subtitle="自动轮播监测点数据" accent="teal" className="rotate-card">
-        <p className="rotate-note">选中项将同步到地图、统计图表与预测专屏</p>
-      </Panel>
+      <AlertsCard snap={snap} selectedId={selected.id} onSelect={pick} />
+      <RankingCard stations={snap.stations} selectedId={selected.id} onSelect={pick} />
+      <LinkPanel station={selected} now={snap.now} onOpen={() => setShowDetail(true)} />
     </aside>
   </div>
 }
@@ -196,7 +215,7 @@ function OverviewPage({ snap, selected, onSelect, showDetail, setShowDetail }: {
 function HorizonCard({ station, hours, label }: { station: Station; hours: number; label: string }) {
   const h = horizon(station, hours)
   const lv = h ? levelOf(h.depth, station.thresholds) : 'none'
-  return <div className="horizon-card">
+  return <div className={`horizon-card h${hours}`}>
     <small>{label}</small>
     <b style={{ color: LEVEL_COLORS[lv] }}>{h ? fmtDepth(h.depth) : '—'}<em>m</em></b>
     <div className="horizon-band"><i style={{ left: `${Math.max(0, Math.min(100, (h ? h.lower : 0) / 1.2 * 100))}%`, width: `${h ? (h.upper - h.lower) / 1.2 * 100 : 0}%` }} /></div>
@@ -205,7 +224,6 @@ function HorizonCard({ station, hours, label }: { station: Station; hours: numbe
 }
 
 function PredictionPage({ snap, selected, onSelect }: { snap: Snapshot; selected: Station; onSelect: (id: string) => void }) {
-  const ranked = [...snap.stations].sort((a, b) => peak(b).depth - peak(a).depth)
   const lv = levelOf(selected.actual, selected.thresholds)
   return <div className="page prediction-page">
     <div className="station-strip">
@@ -218,15 +236,41 @@ function PredictionPage({ snap, selected, onSelect }: { snap: Snapshot; selected
           </button>
         })}
       </div>
+      <span className="strip-hint">点击站点 / 矩阵格子联动全部图表</span>
     </div>
-    <div className="pred-grid">
+
+    <div className="pred-top">
       <Panel title={`${selected.name} · 观测与 12 小时预测`} subtitle={`红阈 ${selected.thresholds.red.toFixed(2)} m · 当前 ${LEVEL_NAMES[lv]}`} accent="blue" className="pred-main">
         <div className="trend-big"><TrendChart station={selected} now={snap.now} /></div>
+      </Panel>
+      <Panel title="三尺度预见期" subtitle="3 / 6 / 12 小时 · 点估计与 90% 区间" accent="orange" className="pred-horizon">
+        <div className="interval-chart"><HorizonIntervalChart station={selected} /></div>
         <div className="horizon-row">
-          <HorizonCard station={selected} hours={1} label="+1 小时" />
-          <HorizonCard station={selected} hours={3} label="+3 小时" />
-          <HorizonCard station={selected} hours={6} label="+6 小时" />
-          <HorizonCard station={selected} hours={12} label="+12 小时" />
+          <HorizonCard station={selected} hours={3} label="+3 小时 · 短期" />
+          <HorizonCard station={selected} hours={6} label="+6 小时 · 中期" />
+          <HorizonCard station={selected} hours={12} label="+12 小时 · 长期" />
+        </div>
+      </Panel>
+    </div>
+
+    <div className="pred-mid">
+      <Panel title="十站风险热力矩阵" subtitle="当前 / +3h / +6h / +12h / 峰值 · 点击行切换" accent="orange" className="pred-heat">
+        <RiskHeatmap stations={snap.stations} selectedId={selected.id} onSelect={onSelect} />
+      </Panel>
+      <Panel title="时段涨落矩阵" subtitle="分段增量 · 绿涨红退 · 点击行切换" accent="teal" className="pred-matrix">
+        <HorizonMatrix stations={snap.stations} selectedId={selected.id} onSelect={onSelect} />
+      </Panel>
+    </div>
+
+    <div className="pred-bottom">
+      <Panel title="十站预测微图" subtitle="同一纵轴尺度 · 点击切换主图" accent="blue" className="pred-minis">
+        <div className="mini-grid">
+          {snap.stations.map(s => (
+            <button key={s.id} className={`mini-card${s.id === selected.id ? ' active' : ''}`} onClick={() => onSelect(s.id)}>
+              <div className="mini-head"><i style={{ background: LEVEL_COLORS[levelOf(s.actual, s.thresholds)] }} />{s.name.replace(/·.*/, '')}<b>{fmtDepth(s.actual)}</b></div>
+              <div className="mini-chart"><SiteMiniChart station={s} /></div>
+            </button>
+          ))}
         </div>
       </Panel>
       <div className="pred-side">
@@ -241,72 +285,22 @@ function PredictionPage({ snap, selected, onSelect }: { snap: Snapshot; selected
         </Panel>
       </div>
     </div>
-    <Panel title="12 小时峰值预测表" subtitle="全站点排序 · 点击切换主图" accent="teal" className="pred-table">
-      <div className="pred-table-scroll"><table>
-        <thead><tr><th>序号</th><th>监测点</th><th>当前水深</th><th>+1h</th><th>+3h</th><th>+6h</th><th>+12h</th><th>预测峰值</th><th>状态</th></tr></thead>
-        <tbody>
-          {ranked.map((s, i) => {
-            const sl = levelOf(s.actual, s.thresholds)
-            const h1 = horizon(s, 1), h3 = horizon(s, 3), h6 = horizon(s, 6), h12 = horizon(s, 12)
-            return <tr key={s.id} className={s.id === selected.id ? 'active' : ''} onClick={() => onSelect(s.id)}>
-              <td>{String(i + 1).padStart(2, '0')}</td>
-              <td className="name">{s.name}</td>
-              <td>{fmtDepth(s.actual)}</td>
-              <td>{h1 ? fmtDepth(h1.depth) : '—'}</td>
-              <td>{h3 ? fmtDepth(h3.depth) : '—'}</td>
-              <td>{h6 ? fmtDepth(h6.depth) : '—'}</td>
-              <td>{h12 ? fmtDepth(h12.depth) : '—'}</td>
-              <td><b>{fmtDepth(peak(s).depth)}</b></td>
-              <td><LevelChip level={sl} /></td>
-            </tr>
-          })}
-        </tbody>
-      </table></div>
-    </Panel>
   </div>
 }
 
 export default function App() {
-  const step = useDisplayClock()
+  const [paused, setPaused] = useState(false)
+  const step = useDisplayClock(paused)
   const snap = useMemo(() => createDemoSnapshot(step), [step])
   const [page, setPage] = useState<Page>(() => pageFromSearch(window.location.search))
   const [selectedId, setSelectedId] = useState(snap.stations[0].id)
   const [showDetail, setShowDetail] = useState(false)
-  const [paused, setPaused] = useState(() => new URLSearchParams(window.location.search).get('paused') === '1')
-  const lastAuto = useRef(0)
 
   useEffect(() => {
     const onPop = () => setPage(pageFromSearch(window.location.search))
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
-
-  useEffect(() => {
-    if (paused) return
-    lastAuto.current = Date.now()   // 进入每页时重置计时，避免首帧立即切页
-    const timer = window.setInterval(() => {
-      const now = Date.now()
-      if (now - lastAuto.current < rotationDelay(window.location.search)) return
-      lastAuto.current = now
-      setPage(p => {
-        const next = nextPage(p)
-        window.history.replaceState(null, '', `?page=${next === 0 ? 1 : 2}`)
-        return next
-      })
-    }, 1000)
-    return () => window.clearInterval(timer)
-  }, [paused])
-
-  useEffect(() => {
-    if (paused) return
-    const timer = window.setInterval(() => {
-      setSelectedId(id => {
-        const i = snap.stations.findIndex(s => s.id === id)
-        return snap.stations[(i + 1) % snap.stations.length].id
-      })
-    }, 11000)
-    return () => window.clearInterval(timer)
-  }, [paused, snap.stations])
 
   const selected = snap.stations.find(s => s.id === selectedId) ?? snap.stations[0]
   const counts = statusCounts(snap.stations)
@@ -330,9 +324,8 @@ export default function App() {
           <button className={page === 0 ? 'active' : ''} onClick={() => go(0)}>全域态势</button>
           <button className={page === 1 ? 'active' : ''} onClick={() => go(1)}>预测专屏</button>
         </div>
-        <button className={`pause-btn ${paused ? 'on' : ''}`} onClick={() => setPaused(v => !v)}>{paused ? '▶ 继续' : '❚❚ 暂停'}</button>
+        <button className={`pause-btn ${paused ? 'on' : ''}`} onClick={() => setPaused(v => !v)}>{paused ? '▶ 继续数据' : '❚❚ 暂停数据'}</button>
       </div>
-      <div className="rotation-progress"><i key={`${page}-${step}`} /></div>
     </header>
     <div className="content">
       {page === 0 ? <OverviewPage snap={snap} selected={selected} onSelect={setSelectedId} showDetail={showDetail} setShowDetail={setShowDetail} />
@@ -347,7 +340,7 @@ export default function App() {
         <span>12h 预测峰值 {fmtDepth(peak(selected).depth)} m（{timeText(peak(selected).at)}）</span>
         <span>数据来源：本地模拟演示 · 非真实观测</span>
       </div>
-      <span className="ticker-page">{page === 0 ? '1 / 2' : '2 / 2'}</span>
+      <span className="ticker-page">{page === 0 ? '1 / 2' : '2 / 2'} · 手动切换</span>
     </footer>
   </div>
 }
