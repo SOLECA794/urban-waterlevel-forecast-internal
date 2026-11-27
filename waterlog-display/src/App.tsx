@@ -4,10 +4,7 @@ import { createDemoSnapshot } from './data'
 import type { Snapshot, Station, Level } from './types'
 import { LEVEL_COLORS, LEVEL_NAMES } from './types'
 import { StationMap } from './StationMap'
-import {
-  TrendChart, FleetChart, RainChart, AccuracyChart, Sparkline,
-  HorizonIntervalChart, RiskHeatmap, HorizonMatrix, SiteMiniChart,
-} from './Charts'
+import { TrendChart, RainChart, AccuracyChart, Sparkline } from './Charts'
 import { pageFromSearch } from './presentation'
 import { LEVELS, dayText, timeText, levelOf, horizon, peak, statusCounts, fmtDepth, fmtRain } from './view'
 
@@ -212,79 +209,54 @@ function OverviewPage({ snap, selected, onSelect, showDetail, setShowDetail }: {
   </div>
 }
 
-function HorizonCard({ station, hours, label }: { station: Station; hours: number; label: string }) {
-  const h = horizon(station, hours)
-  const lv = h ? levelOf(h.depth, station.thresholds) : 'none'
-  return <div className={`horizon-card h${hours}`}>
-    <small>{label}</small>
-    <b style={{ color: LEVEL_COLORS[lv] }}>{h ? fmtDepth(h.depth) : '—'}<em>m</em></b>
-    <div className="horizon-band"><i style={{ left: `${Math.max(0, Math.min(100, (h ? h.lower : 0) / 1.2 * 100))}%`, width: `${h ? (h.upper - h.lower) / 1.2 * 100 : 0}%` }} /></div>
-    <span>置信 {h ? `${fmtDepth(h.lower)}~${fmtDepth(h.upper)}` : '—'}</span>
-  </div>
+function PredStationList({ stations, selectedId, onSelect }: { stations: Station[]; selectedId: string; onSelect: (id: string) => void }) {
+  return <Panel title="监测点" subtitle={`${stations.length} 处 · 点击查看详情`} accent="teal" className="pred-list-panel">
+    <ul className="pred-station-list">
+      {stations.map(s => {
+        const lv = levelOf(s.actual, s.thresholds)
+        return <li key={s.id} className={s.id === selectedId ? 'active' : ''} onClick={() => onSelect(s.id)} tabIndex={0} onKeyDown={e => e.key === 'Enter' && onSelect(s.id)}>
+          <i className="dot" style={{ background: LEVEL_COLORS[lv] }} />
+          <div className="ps-main"><b>{s.name}</b><small>{fmtDepth(s.actual)} m · {fmtRain(s.rain)} mm/h</small></div>
+          <div className="ps-spark"><Sparkline values={s.history.slice(-24).map(p => p.depth)} color={LEVEL_COLORS[lv]} /></div>
+          <LevelChip level={lv} />
+        </li>
+      })}
+    </ul>
+  </Panel>
 }
 
 function PredictionPage({ snap, selected, onSelect }: { snap: Snapshot; selected: Station; onSelect: (id: string) => void }) {
   const lv = levelOf(selected.actual, selected.thresholds)
+  const p = peak(selected)
+  const h1 = horizon(selected, 1)
   return <div className="page prediction-page">
-    <div className="station-strip">
-      <span className="strip-label">监测点</span>
-      <div className="strip-items">
-        {snap.stations.map(s => {
-          const sl = levelOf(s.actual, s.thresholds)
-          return <button key={s.id} className={s.id === selected.id ? 'active' : ''} onClick={() => onSelect(s.id)}>
-            <i style={{ background: LEVEL_COLORS[sl] }} />{s.name.replace(/·.*/, '')}<small>{fmtDepth(s.actual)}</small>
-          </button>
-        })}
+    <aside className="pred-left">
+      <PredStationList stations={snap.stations} selectedId={selected.id} onSelect={onSelect} />
+    </aside>
+    <main className="pred-right">
+      <div className="pred-detail-head">
+        <div className="pd-title"><LevelChip level={lv} /><h2>{selected.name}</h2><span>{dayText(snap.now)} · {timeText(snap.now)} 模拟时刻</span></div>
+        <div className="pd-metrics">
+          <div><small>当前水深</small><b style={{ color: LEVEL_COLORS[lv] }}><Flash token={selected.actual.toFixed(2)}>{fmtDepth(selected.actual)}</Flash></b><em>m</em></div>
+          <div><small>1 小时后</small><b>{h1 ? fmtDepth(h1.depth) : '—'}</b><em>m</em></div>
+          <div><small>12h 峰值</small><b>{fmtDepth(p.depth)}</b><em>m</em></div>
+          <div><small>峰值时刻</small><b className="pd-time">{timeText(p.at)}</b></div>
+          <div><small>当前雨强</small><b>{fmtRain(selected.rain)}</b><em>mm/h</em></div>
+          <div><small>红阈 / 橙阈</small><b className="pd-time">{selected.thresholds.red.toFixed(2)} / {selected.thresholds.orange.toFixed(2)}</b><em>m</em></div>
+        </div>
       </div>
-      <span className="strip-hint">点击站点 / 矩阵格子联动全部图表</span>
-    </div>
-
-    <div className="pred-top">
-      <Panel title={`${selected.name} · 观测与 12 小时预测`} subtitle={`红阈 ${selected.thresholds.red.toFixed(2)} m · 当前 ${LEVEL_NAMES[lv]}`} accent="blue" className="pred-main">
+      <Panel title="观测与 12 小时预测" subtitle={`实线=已观测 · 虚线=预测 · 阴影=90% 置信带 · 红阈 ${selected.thresholds.red.toFixed(2)} m`} accent="blue" className="pred-detail-main">
         <div className="trend-big"><TrendChart station={selected} now={snap.now} /></div>
       </Panel>
-      <Panel title="三尺度预见期" subtitle="3 / 6 / 12 小时 · 点估计与 90% 区间" accent="orange" className="pred-horizon">
-        <div className="interval-chart"><HorizonIntervalChart station={selected} /></div>
-        <div className="horizon-row">
-          <HorizonCard station={selected} hours={3} label="+3 小时 · 短期" />
-          <HorizonCard station={selected} hours={6} label="+6 小时 · 中期" />
-          <HorizonCard station={selected} hours={12} label="+12 小时 · 长期" />
-        </div>
-      </Panel>
-    </div>
-
-    <div className="pred-mid">
-      <Panel title="十站风险热力矩阵" subtitle="当前 / +3h / +6h / +12h / 峰值 · 点击行切换" accent="orange" className="pred-heat">
-        <RiskHeatmap stations={snap.stations} selectedId={selected.id} onSelect={onSelect} />
-      </Panel>
-      <Panel title="时段涨落矩阵" subtitle="分段增量 · 绿涨红退 · 点击行切换" accent="teal" className="pred-matrix">
-        <HorizonMatrix stations={snap.stations} selectedId={selected.id} onSelect={onSelect} />
-      </Panel>
-    </div>
-
-    <div className="pred-bottom">
-      <Panel title="十站预测微图" subtitle="同一纵轴尺度 · 点击切换主图" accent="blue" className="pred-minis">
-        <div className="mini-grid">
-          {snap.stations.map(s => (
-            <button key={s.id} className={`mini-card${s.id === selected.id ? ' active' : ''}`} onClick={() => onSelect(s.id)}>
-              <div className="mini-head"><i style={{ background: LEVEL_COLORS[levelOf(s.actual, s.thresholds)] }} />{s.name.replace(/·.*/, '')}<b>{fmtDepth(s.actual)}</b></div>
-              <div className="mini-chart"><SiteMiniChart station={s} /></div>
-            </button>
-          ))}
-        </div>
-      </Panel>
-      <div className="pred-side">
-        <Panel title="全网站点 12 小时预测" subtitle="同尺度对比 · 线色=预警等级" accent="teal" className="pred-fleet">
-          <div className="chart-box"><FleetChart stations={snap.stations} now={snap.now} /></div>
-        </Panel>
-        <Panel title="预测与实测对照" subtitle="提前 1 小时 · 误差可查" accent="orange" className="pred-acc">
+      <div className="pred-detail-sub">
+        <Panel title="预测与实测对照" subtitle="提前 1 小时 · MAE 误差可查" accent="orange">
           <div className="chart-box"><AccuracyChart points={snap.evaluation} /></div>
         </Panel>
-        <Panel title="近 6 小时降雨" subtitle="站点平均雨强" accent="blue" className="pred-rain">
+        <Panel title="近 6 小时降雨" subtitle="站点平均雨强" accent="teal">
           <div className="chart-box"><RainChart stations={snap.stations} now={snap.now} /></div>
         </Panel>
       </div>
-    </div>
+    </main>
   </div>
 }
 
